@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "CS2 Esports Betting Analyzer & Predictor",
   "main": "server/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server/index.js",
-    "dev": "concurrently \"node server/index.js\" \"cd client && npm run dev\"",
-    "install:all": "npm install && cd client && npm install"
+    "build": "cd client && npm install && npm run build",
+    "dev": "concurrently \"node server/index.js\" \"cd client && npm run dev\""
   },
   "dependencies": {
     "axios": "^1.6.0",
