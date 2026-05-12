@@ -130,6 +130,18 @@ router.post('/resolve/:matchId', (req, res) => {
   res.json(result);
 });
 
+// ── Cuotas bajo demanda (lee del cache, sin calls extra a TheOddsAPI) ─────────
+router.get('/odds/:matchId', (req, res) => {
+  const { cache } = scheduler;
+  const match = (cache.matches || []).find(p => p.matchId === req.params.matchId || p.match?.id === req.params.matchId);
+  if (!match) return res.status(404).json({ error: 'Partido no encontrado en cache' });
+  res.json({
+    odds:          match.match?.odds         || null,
+    pinnacleOdds:  match.match?.pinnacleOdds || null,
+    updatedAt:     cache.ts ? new Date(cache.ts).toISOString() : null,
+  });
+});
+
 // ── Status ────────────────────────────────────────────────────────────────────
 router.get('/status', (req, res) => {
   const PANDA_KEY = process.env.PANDASCORE_API_KEY;

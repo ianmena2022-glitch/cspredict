@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign, ExternalLink } from 'lucide-react';
-import { addBet } from '../api';
+import { useState, useEffect, useRef } from 'react';
+import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { addBet, getMatchOdds } from '../api';
 
 const TIER_COLOR = {
   S: 'text-yellow-400 bg-yellow-400/10',
@@ -42,7 +42,41 @@ function ProbBar({ p1, p2 }) {
 
 export default function MatchCard({ prediction, settings }) {
   const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan } = prediction;
-  const [accepted, setAccepted] = useState(false);
+  const [accepted, setAccepted]       = useState(false);
+  const [oddsVisible, setOddsVisible] = useState(false);
+  const [liveOdds, setLiveOdds]       = useState(null);
+  const [oddsLoading, setOddsLoading] = useState(false);
+  const [oddsUpdatedAt, setOddsUpdatedAt] = useState(null);
+  const intervalRef = useRef(null);
+
+  async function fetchOdds() {
+    setOddsLoading(true);
+    try {
+      const data = await getMatchOdds(match.id);
+      if (data?.odds) {
+        setLiveOdds(data);
+        setOddsUpdatedAt(data.updatedAt ? new Date(data.updatedAt) : new Date());
+      }
+    } catch (e) { /* silencioso */ }
+    finally { setOddsLoading(false); }
+  }
+
+  function revealOdds(e) {
+    e.stopPropagation();
+    setOddsVisible(true);
+    fetchOdds();
+    intervalRef.current = setInterval(fetchOdds, 15 * 60 * 1000);
+  }
+
+  function hideOdds(e) {
+    e.stopPropagation();
+    setOddsVisible(false);
+    setLiveOdds(null);
+    clearInterval(intervalRef.current);
+  }
+
+  // Limpiar interval si se desmonta el componente
+  useEffect(() => () => clearInterval(intervalRef.current), []);
 
   const onebetUrl = settings?.onebet_url || DEFAULT_ONEBET_URL;
 
@@ -158,33 +192,66 @@ export default function MatchCard({ prediction, settings }) {
         <span>{team2.tag}</span>
       </div>
 
-      {/* Cuotas para verificar contra 1xbet */}
-      <div className="bg-[#111827] rounded-lg px-3 py-2 mb-3">
-        <div className="text-xs text-slate-500 mb-1.5 font-medium">Cuotas (verificar en 1xbet)</div>
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col items-center gap-0.5">
-            <span className="text-xs text-slate-400">{team1.tag}</span>
-            <span className="text-base font-bold text-white font-mono">{match.odds.team1}x</span>
-            {match.pinnacleOdds?.team1 && (
-              <span className="text-xs text-blue-400 font-mono">P: {match.pinnacleOdds.team1}x</span>
-            )}
+      {/* Cuotas bajo demanda */}
+      {!oddsVisible ? (
+        <button
+          onClick={revealOdds}
+          className="w-full mb-3 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs
+            text-slate-500 hover:text-slate-300 border border-dashed border-slate-700 hover:border-slate-500 transition-all">
+          <Eye size={11} /> Ver cuotas
+        </button>
+      ) : (
+        <div className="bg-[#111827] rounded-lg px-3 py-2 mb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-slate-500 font-medium">Cuotas — verificar en 1xbet</span>
+            <div className="flex items-center gap-2">
+              {oddsUpdatedAt && (
+                <span className="text-xs text-slate-600">
+                  {oddsUpdatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <button onClick={hideOdds} className="text-slate-600 hover:text-slate-400 transition-colors">
+                <EyeOff size={11} />
+              </button>
+            </div>
           </div>
-          <div className="flex flex-col items-center gap-0.5 text-center">
-            <span className="text-xs text-slate-600">vs</span>
-            <span className="text-xs text-slate-500 font-mono">{match.format?.toUpperCase()}</span>
-          </div>
-          <div className="flex flex-col items-center gap-0.5">
-            <span className="text-xs text-slate-400">{team2.tag}</span>
-            <span className="text-base font-bold text-white font-mono">{match.odds.team2}x</span>
-            {match.pinnacleOdds?.team2 && (
-              <span className="text-xs text-blue-400 font-mono">P: {match.pinnacleOdds.team2}x</span>
-            )}
-          </div>
+
+          {oddsLoading && !liveOdds ? (
+            <div className="text-xs text-slate-600 text-center py-1">Cargando...</div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-xs text-slate-400">{team1.tag}</span>
+                  <span className="text-base font-bold text-white font-mono">
+                    {liveOdds?.odds?.team1 ?? match.odds.team1}x
+                  </span>
+                  {(liveOdds?.pinnacleOdds ?? match.pinnacleOdds)?.team1 && (
+                    <span className="text-xs text-blue-400 font-mono">
+                      P: {(liveOdds?.pinnacleOdds ?? match.pinnacleOdds).team1}x
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-slate-600 font-mono">{match.format?.toUpperCase()}</span>
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-xs text-slate-400">{team2.tag}</span>
+                  <span className="text-base font-bold text-white font-mono">
+                    {liveOdds?.odds?.team2 ?? match.odds.team2}x
+                  </span>
+                  {(liveOdds?.pinnacleOdds ?? match.pinnacleOdds)?.team2 && (
+                    <span className="text-xs text-blue-400 font-mono">
+                      P: {(liveOdds?.pinnacleOdds ?? match.pinnacleOdds).team2}x
+                    </span>
+                  )}
+                </div>
+              </div>
+              {(liveOdds?.pinnacleOdds ?? match.pinnacleOdds) && (
+                <div className="text-xs text-blue-400/50 text-center mt-1">P = Pinnacle (referencia)</div>
+              )}
+            </>
+          )}
         </div>
-        {match.pinnacleOdds && (
-          <div className="text-xs text-blue-400/60 text-center mt-1">P = Pinnacle (referencia)</div>
-        )}
-      </div>
+      )}
 
       {(team1.streakNote || team2.streakNote || team1.restNote || team2.restNote) && (
         <div className="flex flex-wrap gap-2 mb-3">
