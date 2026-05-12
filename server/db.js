@@ -63,6 +63,7 @@ function createSchema() {
       team2          TEXT NOT NULL,
       team1_prob     REAL, team2_prob     REAL,
       team1_odds     REAL, team2_odds     REAL,
+      opening_odds1  REAL, opening_odds2  REAL,
       pinnacle_prob1 REAL, pinnacle_prob2 REAL,
       recommended    TEXT,
       confidence     TEXT,
@@ -71,12 +72,26 @@ function createSchema() {
       kelly_amount   REAL,
       match_date     TEXT,
       format         TEXT,
+      is_lan         INTEGER DEFAULT 0,
+      rest_days1     INTEGER,
+      rest_days2     INTEGER,
+      odds_moved     TEXT,
       status         TEXT DEFAULT 'pending',
       result         TEXT,
       profit         REAL,
       created_at     TEXT DEFAULT (datetime('now'))
     )
   `);
+  // Migración segura: agregar columnas nuevas si no existen
+  const cols = all("PRAGMA table_info(predictions)").map(r => r.name);
+  for (const col of ['opening_odds1','opening_odds2','is_lan','rest_days1','rest_days2','odds_moved']) {
+    if (!cols.includes(col)) {
+      const type = col.startsWith('is_lan') ? 'INTEGER DEFAULT 0'
+                 : col.startsWith('odds_moved') ? 'TEXT'
+                 : col.startsWith('opening') ? 'REAL' : 'INTEGER';
+      db.run(`ALTER TABLE predictions ADD COLUMN ${col} ${type}`);
+    }
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS bankroll (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,25 +147,48 @@ module.exports = {
   },
 
   savePrediction(p) {
+    // Detectar movimiento de cuotas si ya existe el partido
+    const existing = get("SELECT opening_odds1, opening_odds2, team1_odds, team2_odds FROM predictions WHERE match_id=?", [p.match_id]);
+    const opening1 = existing ? existing.opening_odds1 : p.team1_odds;
+    const opening2 = existing ? existing.opening_odds2 : p.team2_odds;
+
+    let oddsMovement = p.odds_moved || null;
+    if (existing && existing.team1_odds && p.team1_odds) {
+      const d1 = p.team1_odds - existing.team1_odds;
+      const d2 = p.team2_odds - existing.team2_odds;
+      if (Math.abs(d1) >= 0.05 || Math.abs(d2) >= 0.05) {
+        // Cuota baja = más dinero apostado = "smart money" en ese equipo
+        if (d1 < -0.05) oddsMovement = `t1_drop_${Math.abs(d1).toFixed(2)}`;
+        else if (d2 < -0.05) oddsMovement = `t2_drop_${Math.abs(d2).toFixed(2)}`;
+      }
+    }
+
     db.run(`
       INSERT INTO predictions
         (match_id, tournament, team1, team2, team1_prob, team2_prob,
-         team1_odds, team2_odds, pinnacle_prob1, pinnacle_prob2,
+         team1_odds, team2_odds, opening_odds1, opening_odds2,
+         pinnacle_prob1, pinnacle_prob2,
          recommended, confidence, ev, kelly_fraction, kelly_amount,
-         match_date, format, status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         match_date, format, is_lan, rest_days1, rest_days2, odds_moved, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(match_id) DO UPDATE SET
         team1_prob=excluded.team1_prob, team2_prob=excluded.team2_prob,
         team1_odds=excluded.team1_odds, team2_odds=excluded.team2_odds,
         pinnacle_prob1=excluded.pinnacle_prob1, pinnacle_prob2=excluded.pinnacle_prob2,
         recommended=excluded.recommended, confidence=excluded.confidence,
         ev=excluded.ev, kelly_fraction=excluded.kelly_fraction,
-        kelly_amount=excluded.kelly_amount, status=excluded.status
+        kelly_amount=excluded.kelly_amount,
+        is_lan=excluded.is_lan, rest_days1=excluded.rest_days1,
+        rest_days2=excluded.rest_days2, odds_moved=excluded.odds_moved,
+        status=excluded.status
     `, [
       p.match_id, p.tournament, p.team1, p.team2,
       p.team1_prob, p.team2_prob, p.team1_odds, p.team2_odds,
+      opening1, opening2,
       p.pinnacle_prob1, p.pinnacle_prob2, p.recommended, p.confidence,
-      p.ev, p.kelly_fraction, p.kelly_amount, p.match_date, p.format, p.status,
+      p.ev, p.kelly_fraction, p.kelly_amount, p.match_date, p.format,
+      p.is_lan ?? 0, p.rest_days1 ?? null, p.rest_days2 ?? null,
+      oddsMovement, p.status,
     ]);
     persist();
   },

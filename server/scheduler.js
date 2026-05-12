@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const axios = require('axios');
 const { teams, upcomingMatches } = require('./data/mockData');
 const { predictAll } = require('./predictor');
+const { getTeamStats } = require('./teamStats');
 const { db, savePrediction, resolveMatch, getBankroll, getSettings } = require('./db');
 
 const PANDA_KEY = process.env.PANDASCORE_API_KEY;
@@ -89,12 +90,18 @@ function mapMatch(m, oddsData, pinnacleData) {
   const oddsAny     = extractOdds(oddsData,    t1.name, t2.name, '');
   const finalOdds   = odds1xbet || oddsAny || { team1: 1.90, team2: 1.90 };
 
+  // Detectar LAN: si hay location en el torneo y no dice "online"
+  const loc = (m.tournament?.location || '').toLowerCase();
+  const isLan = loc !== '' && loc !== 'online';
+
   return {
     id: `ps_${m.id}`,
     tournament: m.league?.name || 'Torneo CS2',
     tournamentTier: m.tier === 's' ? 'S' : m.tier === 'a' ? 'A' : 'B',
     team1: t1Key, team2: t2Key,
     team1Name: t1.name, team2Name: t2.name,
+    team1PandaId: t1.id,
+    team2PandaId: t2.id,
     date: m.begin_at || m.scheduled_at,
     format: m.number_of_games === 1 ? 'bo1' : m.number_of_games === 3 ? 'bo3' : 'bo5',
     maps: [],
@@ -103,6 +110,7 @@ function mapMatch(m, oddsData, pinnacleData) {
     stream: m.streams_list?.[0]?.raw_url || '#',
     live: m.status === 'running',
     pandaId: m.id,
+    isLan,
   };
 }
 
@@ -125,7 +133,20 @@ async function refreshMatches() {
       return;
     }
 
-    const matchList = rawMatches.map(m => mapMatch(m, bookmaker, pinnacle)).filter(Boolean);
+    const rawList = rawMatches.map(m => mapMatch(m, bookmaker, pinnacle)).filter(Boolean);
+
+    // Enriquecer con stats dinámicos de PandaScore (winRate real, forma, descanso, LAN)
+    const matchList = await Promise.all(rawList.map(async (m) => {
+      const [ds1, ds2] = await Promise.allSettled([
+        getTeamStats(m.team1PandaId, m.team1Name),
+        getTeamStats(m.team2PandaId, m.team2Name),
+      ]);
+      return {
+        ...m,
+        dynamicStats1: ds1.status === 'fulfilled' ? ds1.value : null,
+        dynamicStats2: ds2.status === 'fulfilled' ? ds2.value : null,
+      };
+    }));
 
     const settings  = getSettings();
     const bankroll  = getBankroll();
@@ -142,24 +163,28 @@ async function refreshMatches() {
     for (const p of predictions) {
       if (!p || !p.matchId) continue;
       savePrediction({
-        match_id:      p.matchId,
-        tournament:    p.match?.tournament || '',
-        team1:         p.match?.team1Name || p.match?.team1 || '',
-        team2:         p.match?.team2Name || p.match?.team2 || '',
-        team1_prob:    p.team1?.probability,
-        team2_prob:    p.team2?.probability,
-        team1_odds:    p.match?.odds?.team1,
-        team2_odds:    p.match?.odds?.team2,
+        match_id:       p.matchId,
+        tournament:     p.match?.tournament || '',
+        team1:          p.match?.team1Name || p.match?.team1 || '',
+        team2:          p.match?.team2Name || p.match?.team2 || '',
+        team1_prob:     p.team1?.probability,
+        team2_prob:     p.team2?.probability,
+        team1_odds:     p.match?.odds?.team1,
+        team2_odds:     p.match?.odds?.team2,
         pinnacle_prob1: p.team1?.refProb,
         pinnacle_prob2: p.team2?.refProb,
-        recommended:   p.recommendation ? (p.recommendation === p.match?.team1 ? p.match?.team1Name || p.match?.team1 : p.match?.team2Name || p.match?.team2) : null,
-        confidence:    p.confidence,
-        ev:            p.bestEv,
+        recommended:    p.recommendation ? (p.recommendation === p.match?.team1 ? p.match?.team1Name || p.match?.team1 : p.match?.team2Name || p.match?.team2) : null,
+        confidence:     p.confidence,
+        ev:             p.bestEv,
         kelly_fraction: p.kellyPct,
-        kelly_amount:  p.kellyAmount,
-        match_date:    p.match?.date,
-        format:        p.match?.format,
-        status:        'pending',
+        kelly_amount:   p.kellyAmount,
+        match_date:     p.match?.date,
+        format:         p.match?.format,
+        is_lan:         p.match?.isLan ? 1 : 0,
+        rest_days1:     p.team1?.restDays,
+        rest_days2:     p.team2?.restDays,
+        odds_moved:     p.oddsMovement || null,
+        status:         'pending',
       });
     }
 

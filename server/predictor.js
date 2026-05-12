@@ -50,68 +50,100 @@ function removeMargin(odds1, odds2) {
   return { p1: impl1 / margin, p2: impl2 / margin };
 }
 
+// Curva de descanso → ya calculada en teamStats, recibida como restMult
+// Fallback si no viene del módulo
+function defaultRestMult(days) {
+  if (days === null || days === undefined) return 1.0;
+  if (days === 0)  return 0.88;
+  if (days === 1)  return 0.94;
+  if (days <= 4)   return 1.00;
+  if (days <= 7)   return 0.97;
+  if (days <= 14)  return 0.93;
+  return 0.88;
+}
+
 function predict(matchId, match, options = {}) {
   const { bankroll = 100, kellyFraction = 0.25, minEv = 0.05, minEdge = 0.03, pinnacleOdds } = options;
 
-  const t1 = teams[match.team1];
-  const t2 = teams[match.team2];
+  const staticT1 = teams[match.team1];
+  const staticT2 = teams[match.team2];
+  const dyn1 = match.dynamicStats1;
+  const dyn2 = match.dynamicStats2;
 
-  // Si no tenemos datos de uno o ambos equipos, igual mostramos el partido
-  // pero marcamos que los datos son insuficientes para una predicción fiable
-  const hasData = !!(t1 && t2);
+  // Merge: datos dinámicos tienen prioridad sobre estáticos
+  const hasData = !!(staticT1 && staticT2) || !!(dyn1 && dyn2);
 
   if (!hasData) {
     const ref = removeMargin(match.odds.team1, match.odds.team2);
+    const baseTeam = (name, tag, ref) => ({
+      name, tag, logo: '🎮',
+      probability: +(ref * 100).toFixed(1),
+      ev: 0, edge: 0, clv: 0,
+      scores: {}, streakNote: null,
+      refProb: +(ref * 100).toFixed(1),
+      restDays: null, restMult: 1, usingDynamic: false,
+    });
     return {
-      matchId,
-      insufficientData: true,
-      team1: {
-        name: match.team1Name || match.team1,
-        tag:  match.team1Name || match.team1,
-        logo: '🎮',
-        probability: +(ref.p1 * 100).toFixed(1),
-        ev: 0, edge: 0, clv: 0,
-        scores: {},
-        streakNote: null,
-        refProb: +(ref.p1 * 100).toFixed(1),
-      },
-      team2: {
-        name: match.team2Name || match.team2,
-        tag:  match.team2Name || match.team2,
-        logo: '🎮',
-        probability: +(ref.p2 * 100).toFixed(1),
-        ev: 0, edge: 0, clv: 0,
-        scores: {},
-        streakNote: null,
-        refProb: +(ref.p2 * 100).toFixed(1),
-      },
-      recommendation: null,
-      confidence: 'no_data',
-      bestEv: 0,
-      kellyPct: 0,
-      kellyAmount: 0,
-      pinnacleUsed: !!pinnacleOdds,
-      weights: WEIGHTS,
+      matchId, insufficientData: true,
+      team1: baseTeam(match.team1Name || match.team1, match.team1Name || match.team1, ref.p1),
+      team2: baseTeam(match.team2Name || match.team2, match.team2Name || match.team2, ref.p2),
+      recommendation: null, confidence: 'no_data',
+      bestEv: 0, kellyPct: 0, kellyAmount: 0,
+      pinnacleUsed: !!pinnacleOdds, weights: WEIGHTS,
     };
   }
 
   const h2h = getH2HScore(match.team1, match.team2);
 
+  // Construir datos efectivos: dinámicos > estáticos > fallback neutro
+  const eff1 = {
+    hltvRating: staticT1?.hltvRating ?? 0.75,
+    avgRating:  staticT1?.avgRating  ?? 1.0,
+    recentForm: dyn1?.recentForm  || staticT1?.recentForm || ['W','L','W','L','W'],
+    winRate:    dyn1?.winRate     ?? staticT1?.winRate    ?? 0.5,
+    mapStats:   staticT1?.mapStats ?? {},
+    name:       staticT1?.name    || match.team1Name || match.team1,
+    tag:        staticT1?.tag     || match.team1Name || match.team1,
+    logo:       staticT1?.logo    || '🎮',
+    streak:     dyn1?.streak      ?? staticT1?.streak ?? 0,
+    restDays:   dyn1?.restDays    ?? null,
+    restMult:   dyn1?.restMult    ?? defaultRestMult(null),
+  };
+  const eff2 = {
+    hltvRating: staticT2?.hltvRating ?? 0.75,
+    avgRating:  staticT2?.avgRating  ?? 1.0,
+    recentForm: dyn2?.recentForm  || staticT2?.recentForm || ['W','L','W','L','W'],
+    winRate:    dyn2?.winRate     ?? staticT2?.winRate    ?? 0.5,
+    mapStats:   staticT2?.mapStats ?? {},
+    name:       staticT2?.name    || match.team2Name || match.team2,
+    tag:        staticT2?.tag     || match.team2Name || match.team2,
+    logo:       staticT2?.logo    || '🎮',
+    streak:     dyn2?.streak      ?? staticT2?.streak ?? 0,
+    restDays:   dyn2?.restDays    ?? null,
+    restMult:   dyn2?.restMult    ?? defaultRestMult(null),
+  };
+
+  // Si es LAN y el equipo tiene suficiente historial LAN, usar esa tasa
+  if (match.isLan) {
+    if (dyn1?.lanWinRate !== null && dyn1?.lanWinRate !== undefined) eff1.winRate = dyn1.lanWinRate;
+    if (dyn2?.lanWinRate !== null && dyn2?.lanWinRate !== undefined) eff2.winRate = dyn2.lanWinRate;
+  }
+
   const s1 = {
-    hltvRating: normalizeRating(t1.hltvRating),
-    recentForm: formScore(t1.recentForm),
-    avgRating:  normalizeAvgRating(t1.avgRating),
-    winRate:    t1.winRate,
+    hltvRating: normalizeRating(eff1.hltvRating),
+    recentForm: formScore(eff1.recentForm),
+    avgRating:  normalizeAvgRating(eff1.avgRating),
+    winRate:    eff1.winRate,
     h2h:        h2h.t1,
-    mapPool:    mapPoolScore(t1, match.maps),
+    mapPool:    mapPoolScore(eff1, match.maps),
   };
   const s2 = {
-    hltvRating: normalizeRating(t2.hltvRating),
-    recentForm: formScore(t2.recentForm),
-    avgRating:  normalizeAvgRating(t2.avgRating),
-    winRate:    t2.winRate,
+    hltvRating: normalizeRating(eff2.hltvRating),
+    recentForm: formScore(eff2.recentForm),
+    avgRating:  normalizeAvgRating(eff2.avgRating),
+    winRate:    eff2.winRate,
     h2h:        h2h.t2,
-    mapPool:    mapPoolScore(t2, match.maps),
+    mapPool:    mapPoolScore(eff2, match.maps),
   };
 
   let raw1 = 0, raw2 = 0;
@@ -119,6 +151,11 @@ function predict(matchId, match, options = {}) {
     raw1 += w * s1[k];
     raw2 += w * s2[k];
   }
+
+  // Aplicar multiplicador de descanso ANTES de normalizar
+  raw1 *= eff1.restMult;
+  raw2 *= eff2.restMult;
+
   const total = raw1 + raw2;
   const prob1 = raw1 / total;
   const prob2 = raw2 / total;
@@ -159,24 +196,41 @@ function predict(matchId, match, options = {}) {
     return null;
   };
 
+  const restNote = (days) => {
+    if (days === null || days === undefined) return null;
+    if (days === 0) return '😴 Jugó hoy';
+    if (days === 1) return '⚡ Jugó ayer';
+    if (days > 14)  return `🦀 ${days}d sin jugar`;
+    return null;
+  };
+
   return {
     matchId,
     insufficientData: false,
+    usingDynamic: !!(dyn1 || dyn2),
     team1: {
-      name: t1.name, tag: t1.tag, logo: t1.logo,
+      name: eff1.name, tag: eff1.tag, logo: eff1.logo,
       probability: +(prob1 * 100).toFixed(1),
-      ev: +ev1.toFixed(3), edge: +edge1.toFixed(3), clv: +((prob1 - ref.p1) / ref.p1).toFixed(3),
+      ev: +ev1.toFixed(3), edge: +edge1.toFixed(3),
+      clv: +((prob1 - ref.p1) / ref.p1).toFixed(3),
       scores: Object.fromEntries(Object.entries(s1).map(([k, v]) => [k, +v.toFixed(3)])),
-      streakNote: streakNote(t1),
+      streakNote: streakNote(eff1),
+      restNote: restNote(eff1.restDays),
+      restDays: eff1.restDays,
       refProb: +(ref.p1 * 100).toFixed(1),
+      usingDynamic: !!dyn1,
     },
     team2: {
-      name: t2.name, tag: t2.tag, logo: t2.logo,
+      name: eff2.name, tag: eff2.tag, logo: eff2.logo,
       probability: +(prob2 * 100).toFixed(1),
-      ev: +ev2.toFixed(3), edge: +edge2.toFixed(3), clv: +((prob2 - ref.p2) / ref.p2).toFixed(3),
+      ev: +ev2.toFixed(3), edge: +edge2.toFixed(3),
+      clv: +((prob2 - ref.p2) / ref.p2).toFixed(3),
       scores: Object.fromEntries(Object.entries(s2).map(([k, v]) => [k, +v.toFixed(3)])),
-      streakNote: streakNote(t2),
+      streakNote: streakNote(eff2),
+      restNote: restNote(eff2.restDays),
+      restDays: eff2.restDays,
       refProb: +(ref.p2 * 100).toFixed(1),
+      usingDynamic: !!dyn2,
     },
     recommendation,
     confidence,
@@ -184,6 +238,7 @@ function predict(matchId, match, options = {}) {
     kellyPct:    +(kellyPct * 100).toFixed(2),
     kellyAmount,
     pinnacleUsed: !!pinnacleOdds,
+    isLan: !!match.isLan,
     weights: WEIGHTS,
   };
 }

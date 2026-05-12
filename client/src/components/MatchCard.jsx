@@ -37,10 +37,13 @@ function ProbBar({ p1, p2 }) {
 }
 
 export default function MatchCard({ prediction }) {
-  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData } = prediction;
+  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan } = prediction;
   if (!team1 || !team2 || !match) return null;
   const isRec1 = recommendation === match.team1;
   const isRec2 = recommendation === match.team2;
+
+  // Parsear movimiento de cuotas desde el match si viene del backend
+  const oddsMovement = match?.oddsMovement || prediction?.oddsMovement || null;
 
   return (
     <div className="bg-[#1a2235] border border-[#1e2d45] rounded-xl p-4 hover:border-blue-500/40 transition-all">
@@ -54,6 +57,16 @@ export default function MatchCard({ prediction }) {
           {insufficientData && (
             <span className="text-xs px-2 py-0.5 rounded font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
               SIN DATOS
+            </span>
+          )}
+          {isLan && !insufficientData && (
+            <span className="text-xs px-2 py-0.5 rounded font-bold bg-purple-500/10 text-purple-400 border border-purple-500/30">
+              LAN
+            </span>
+          )}
+          {usingDynamic && !insufficientData && (
+            <span className="text-xs px-2 py-0.5 rounded font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              📡 Live
             </span>
           )}
         </div>
@@ -107,10 +120,23 @@ export default function MatchCard({ prediction }) {
         <span>{team2.tag}</span>
       </div>
 
-      {(team1.streakNote || team2.streakNote) && (
+      {(team1.streakNote || team2.streakNote || team1.restNote || team2.restNote) && (
         <div className="flex flex-wrap gap-2 mb-3">
           {team1.streakNote && <span className="text-xs bg-[#111827] px-2 py-1 rounded">{team1.streakNote} {team1.tag}</span>}
           {team2.streakNote && <span className="text-xs bg-[#111827] px-2 py-1 rounded">{team2.streakNote} {team2.tag}</span>}
+          {team1.restNote && <span className="text-xs bg-orange-500/10 text-orange-300 px-2 py-1 rounded">{team1.restNote} {team1.tag}</span>}
+          {team2.restNote && <span className="text-xs bg-orange-500/10 text-orange-300 px-2 py-1 rounded">{team2.restNote} {team2.tag}</span>}
+        </div>
+      )}
+
+      {oddsMovement && (
+        <div className="mb-3 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
+          <TrendingUp size={12} className="text-blue-400 shrink-0" />
+          <span className="text-xs text-blue-300">
+            {oddsMovement.startsWith('t1_drop')
+              ? `Cuota de ${team1.tag} cayó ${oddsMovement.split('_')[2]} — dinero entrando`
+              : `Cuota de ${team2.tag} cayó ${oddsMovement.split('_')[2]} — dinero entrando`}
+          </span>
         </div>
       )}
 
