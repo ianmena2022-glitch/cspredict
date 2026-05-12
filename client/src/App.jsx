@@ -170,6 +170,18 @@ function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[...Array(6)].map((_, i) => <div key={i} className="bg-[#1a2235] border border-[#1e2d45] rounded-xl h-72 animate-pulse" />)}
               </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <div className="text-5xl mb-4">📡</div>
+                <h3 className="text-lg font-bold text-slate-300 mb-2">
+                  {matches.length === 0 ? 'No hay partidos disponibles' : 'Sin apuestas con valor ahora'}
+                </h3>
+                <p className="text-sm text-slate-500 max-w-xs">
+                  {matches.length === 0
+                    ? 'El scheduler aún no encontró partidos en PandaScore, o no hay eventos programados.'
+                    : 'Hay partidos cargados pero ninguno cumple los criterios de EV y edge mínimo.'}
+                </p>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filtered.map(pred => (

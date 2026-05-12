@@ -117,12 +117,15 @@ async function refreshMatches() {
     const rawMatches   = pandaData.status === 'fulfilled' && pandaData.value ? pandaData.value : null;
     const { bookmaker = [], pinnacle = [] } = oddsData.status === 'fulfilled' ? oddsData.value : {};
 
-    let matchList;
-    if (rawMatches) {
-      matchList = rawMatches.map(m => mapMatch(m, bookmaker, pinnacle)).filter(Boolean);
-    } else {
-      matchList = upcomingMatches;
+    // Sin fallback a mock — si no hay partidos reales, mostramos nada
+    if (!rawMatches || rawMatches.length === 0) {
+      cache.matches = [];
+      cache.ts = Date.now();
+      console.log(`[${new Date().toISOString()}] Sin partidos de PandaScore`);
+      return;
     }
+
+    const matchList = rawMatches.map(m => mapMatch(m, bookmaker, pinnacle)).filter(Boolean);
 
     const settings  = getSettings();
     const bankroll  = getBankroll();
@@ -133,12 +136,7 @@ async function refreshMatches() {
       minEdge:       parseFloat(settings.min_edge       || 0.03),
     };
 
-    let predictions = predictAll(matchList, options);
-
-    // Si PandaScore no devolvió nada útil, usar datos mock como base
-    if (predictions.length === 0) {
-      predictions = predictAll(upcomingMatches, options);
-    }
+    const predictions = predictAll(matchList, options);
 
     // Guardar en DB
     for (const p of predictions) {

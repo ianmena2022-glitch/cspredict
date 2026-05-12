@@ -7,18 +7,12 @@ const scheduler = require('../scheduler');
 
 function getLiveData() {
   const { cache } = scheduler;
-  if (cache.matches && cache.matches.length > 0 && Date.now() - cache.ts < 5 * 60 * 1000) {
-    return { data: cache.matches, source: 'live' };
+  // Usar cache si tiene datos recientes (con o sin partidos)
+  if (cache.ts && Date.now() - cache.ts < 5 * 60 * 1000) {
+    return { data: cache.matches || [], source: 'live' };
   }
-  const settings = getSettings();
-  const bankroll  = getBankroll();
-  const fallback  = predictAll(upcomingMatches, {
-    bankroll,
-    kellyFraction: parseFloat(settings.kelly_fraction || 0.25),
-    minEv:         parseFloat(settings.min_ev         || 0.05),
-    minEdge:       parseFloat(settings.min_edge       || 0.03),
-  });
-  return { data: fallback, source: 'mock' };
+  // Cache vacío: el scheduler aún no corrió, devolver vacío
+  return { data: [], source: 'loading' };
 }
 
 // ── Partidos + predicciones ───────────────────────────────────────────────────

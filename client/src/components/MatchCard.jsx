@@ -37,7 +37,7 @@ function ProbBar({ p1, p2 }) {
 }
 
 export default function MatchCard({ prediction }) {
-  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed } = prediction;
+  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData } = prediction;
   if (!team1 || !team2 || !match) return null;
   const isRec1 = recommendation === match.team1;
   const isRec2 = recommendation === match.team2;
@@ -51,6 +51,11 @@ export default function MatchCard({ prediction }) {
             TIER {match.tournamentTier}
           </span>
           <span className="text-xs text-slate-400 truncate max-w-[180px]">{match.tournament}</span>
+          {insufficientData && (
+            <span className="text-xs px-2 py-0.5 rounded font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
+              SIN DATOS
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1 text-xs text-slate-400">
           <Clock size={12} />
@@ -120,6 +125,13 @@ export default function MatchCard({ prediction }) {
             Kelly {kellyPct?.toFixed(1)}%
             {pinnacleUsed && <span className="ml-1 text-blue-400">· vs Pinnacle</span>}
           </div>
+        </div>
+      )}
+
+      {insufficientData && (
+        <div className="mb-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2 flex items-center gap-2">
+          <AlertCircle size={13} className="text-yellow-400 shrink-0" />
+          <span className="text-xs text-yellow-300">Equipo desconocido — probabilidades basadas solo en cuotas de mercado. No apostar.</span>
         </div>
       )}
 
