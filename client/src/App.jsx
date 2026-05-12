@@ -4,8 +4,8 @@ import MatchCard from './components/MatchCard';
 import Rankings from './components/Rankings';
 import StatsPanel from './components/StatsPanel';
 import BankrollDashboard from './components/BankrollDashboard';
-import BetHistory from './components/BetHistory';
-import { getMatches, getRankings, getStatus, getBankroll, getStats, getHistory, getSettings } from './api';
+import ManualBets from './components/ManualBets';
+import { getMatches, getRankings, getStatus, getBankroll, getStats, getHistory, getSettings, getUserBets } from './api';
 import { RefreshCw, TrendingUp, Trophy, Info, DollarSign, Clock } from 'lucide-react';
 
 // Captura errores de render y los muestra en pantalla
@@ -91,6 +91,7 @@ function App() {
   const [bankrollData, setBankroll] = useState(null);
   const [stats, setStats]           = useState(null);
   const [history, setHistory]       = useState([]);
+  const [userBets, setUserBets]     = useState([]);
   const [settings, setSettings]     = useState(null);
   const [loading, setLoading]       = useState(true);
   const [tab, setTab]               = useState('matches');
@@ -108,13 +109,14 @@ function App() {
 
     // Cargar datos de bankroll por separado para no bloquear los partidos
     try {
-      const [br, st, hist, cfg] = await Promise.all([
-        getBankroll(), getStats(), getHistory(), getSettings(),
+      const [br, st, hist, cfg, ub] = await Promise.all([
+        getBankroll(), getStats(), getHistory(), getSettings(), getUserBets(),
       ]);
       setBankroll(br || { amount: 100, history: [], stats: {} });
       setStats(st || {});
       setHistory(hist?.data || []);
       setSettings(cfg || {});
+      setUserBets(ub?.data || []);
     } catch (e) { console.error('bankroll/stats error:', e); }
 
     setLoading(false);
@@ -206,7 +208,7 @@ function App() {
           />
         )}
 
-        {tab === 'history' && <BetHistory history={history} />}
+        {tab === 'history' && <ManualBets bets={userBets} onRefresh={load} />}
 
         {tab === 'rankings' && (
           <div className="max-w-2xl">

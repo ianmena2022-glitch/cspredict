@@ -13,3 +13,9 @@ export const updateSettings = (body) =>
 
 export const updateBankroll = (amount, note) =>
   fetch(`${BASE}/bankroll`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount, note }) }).then(r => r.json());
+
+export const getUserBets    = ()         => fetch(`${BASE}/bets`).then(r => r.json());
+export const addBet         = (body)     => fetch(`${BASE}/bets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+export const deleteBet      = (id)       => fetch(`${BASE}/bets/${id}`, { method: 'DELETE' }).then(r => r.json());
+export const resolveBet     = (id, result) => fetch(`${BASE}/bets/${id}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ result }) }).then(r => r.json());
+export const updateBetAmount = (id, amount) => fetch(`${BASE}/bets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount }) }).then(r => r.json());

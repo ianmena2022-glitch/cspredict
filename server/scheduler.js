@@ -3,7 +3,7 @@ const axios = require('axios');
 const { teams, upcomingMatches } = require('./data/mockData');
 const { predictAll } = require('./predictor');
 const { getTeamStats } = require('./teamStats');
-const { db, savePrediction, resolveMatch, getBankroll, getSettings } = require('./db');
+const { db, savePrediction, resolveMatch, resolveUserBetsByMatch, getBankroll, getSettings } = require('./db');
 
 const PANDA_KEY = process.env.PANDASCORE_API_KEY;
 const ODDS_KEY  = process.env.ODDS_API_KEY;
@@ -240,6 +240,7 @@ async function checkResults() {
       if (result) {
         console.log(`[Resultado] ${matchId}: ganó ${winner} | P&L: ${result.profit >= 0 ? '+' : ''}${result.profit?.toFixed(2)}`);
       }
+      resolveUserBetsByMatch(matchId, winner);
     }
   } catch (err) {
     console.error('checkResults error:', err.message);

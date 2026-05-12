@@ -2,7 +2,8 @@ const express = require('express');
 const router  = express.Router();
 const { upcomingMatches } = require('../data/mockData');
 const { predictAll }      = require('../predictor');
-const { db, getBankroll, getSettings, updateSetting, getPredictions, getStats, getBankrollHistory } = require('../db');
+const { db, getBankroll, getSettings, updateSetting, getPredictions, getStats, getBankrollHistory,
+        addUserBet, getUserBets, deleteUserBet, resolveUserBet, updateUserBetAmount } = require('../db');
 const scheduler = require('../scheduler');
 
 function getLiveData() {
@@ -39,8 +40,11 @@ router.get('/bankroll', (req, res) => {
 // Actualizar bankroll manualmente
 router.post('/bankroll', (req, res) => {
   const { amount, note } = req.body;
-  if (!amount || isNaN(amount)) return res.status(400).json({ error: 'amount requerido' });
-  db.prepare("INSERT INTO bankroll (amount, note) VALUES (?, ?)").run(+amount, note || 'Ajuste manual');
+  if (amount === undefined || amount === '' || isNaN(+amount) || +amount <= 0) {
+    return res.status(400).json({ error: 'amount debe ser un número mayor a 0' });
+  }
+  const dbModule = require('../db');
+  dbModule.run("INSERT INTO bankroll (amount, note) VALUES (?, ?)", [+amount, note || 'Ajuste manual']);
   res.json({ amount: +amount });
 });
 
@@ -75,6 +79,41 @@ router.post('/settings', (req, res) => {
     if (allowed.includes(k)) updateSetting(k, v);
   }
   res.json(getSettings());
+});
+
+// ── Bets manuales del usuario ─────────────────────────────────────────────────
+router.get('/bets', (req, res) => {
+  res.json({ data: getUserBets() });
+});
+
+router.post('/bets', (req, res) => {
+  const { match_id, tournament, team1, team2, bet_on, odds, amount, ev, kelly_pct, match_date, format } = req.body;
+  if (!team1 || !team2 || !bet_on || !odds || !amount) {
+    return res.status(400).json({ error: 'Faltan campos requeridos' });
+  }
+  const bet = addUserBet({ match_id, tournament, team1, team2, bet_on, odds, amount, ev, kelly_pct, match_date, format });
+  res.json(bet);
+});
+
+router.delete('/bets/:id', (req, res) => {
+  const ok = deleteUserBet(+req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Bet no encontrada' });
+  res.json({ ok: true });
+});
+
+router.post('/bets/:id/resolve', (req, res) => {
+  const { result } = req.body;
+  if (!result) return res.status(400).json({ error: 'result requerido' });
+  const r = resolveUserBet(+req.params.id, result);
+  if (!r) return res.status(404).json({ error: 'Bet no encontrada o ya resuelta' });
+  res.json(r);
+});
+
+router.patch('/bets/:id', (req, res) => {
+  const { amount } = req.body;
+  if (!amount || isNaN(amount)) return res.status(400).json({ error: 'amount requerido' });
+  updateUserBetAmount(+req.params.id, +amount);
+  res.json({ ok: true });
 });
 
 // ── Resolver partido manualmente (por si el cron no lo detecta) ───────────────

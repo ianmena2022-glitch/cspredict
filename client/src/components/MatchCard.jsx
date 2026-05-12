@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign, Copy, ExternalLink } from 'lucide-react';
+import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign, ExternalLink } from 'lucide-react';
+import { addBet } from '../api';
 
 const TIER_COLOR = {
   S: 'text-yellow-400 bg-yellow-400/10',
@@ -41,7 +42,7 @@ function ProbBar({ p1, p2 }) {
 
 export default function MatchCard({ prediction, settings }) {
   const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan } = prediction;
-  const [copied, setCopied] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   const onebetUrl = settings?.onebet_url || DEFAULT_ONEBET_URL;
 
@@ -58,20 +59,28 @@ export default function MatchCard({ prediction, settings }) {
 
   const oddsMovement = match?.oddsMovement || prediction?.oddsMovement || null;
 
-  function copyBet() {
-    if (!recTeam) return;
-    const text = [
-      `🎮 ${team1.tag} vs ${team2.tag}`,
-      `📋 ${match.tournament} · ${match.format?.toUpperCase()} · ${timeUntil(match.date)}`,
-      `✅ APOSTAR: ${recTeam.tag} @ ${recOdds}x`,
-      `💵 Monto: $${kellyAmount?.toFixed(2)} (Kelly ${kellyPct?.toFixed(1)}%)`,
-      `📊 Prob: ${recTeam.probability}% · EV: +${(recTeam.ev * 100).toFixed(1)}%`,
-      `🔗 1xbet CS2: ${onebetUrl}`,
-    ].join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  async function acceptBet(e) {
+    e.stopPropagation();
+    if (!recTeam || accepted) return;
+    try {
+      await addBet({
+        match_id:    match.id,
+        tournament:  match.tournament,
+        team1:       team1.name || team1.tag,
+        team2:       team2.name || team2.tag,
+        bet_on:      recTeam.name || recTeam.tag,
+        odds:        recOdds,
+        amount:      kellyAmount,
+        ev:          recTeam.ev,
+        kelly_pct:   kellyPct,
+        match_date:  match.date,
+        format:      match.format,
+      });
+      setAccepted(true);
+      setTimeout(() => setAccepted(false), 3000);
+    } catch (err) {
+      console.error('addBet error:', err);
+    }
   }
 
   return (
@@ -194,11 +203,14 @@ export default function MatchCard({ prediction, settings }) {
       {recommendation && kellyAmount > 0 && (
         <div className="flex gap-2 mb-3">
           <button
-            onClick={(e) => { e.stopPropagation(); copyBet(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium
-              bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600/50 transition-all">
-            <Copy size={12} />
-            {copied ? '¡Copiado!' : 'Copiar apuesta'}
+            onClick={acceptBet}
+            disabled={accepted}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all
+              ${accepted
+                ? 'bg-green-500/30 text-green-300 border border-green-500/50 cursor-default'
+                : 'bg-green-500/15 hover:bg-green-500/25 text-green-400 hover:text-green-300 border border-green-500/30'}`}>
+            <CheckCircle size={12} />
+            {accepted ? '¡Bet registrada!' : 'Aceptar apuesta'}
           </button>
           <button
             onClick={openOneBet}

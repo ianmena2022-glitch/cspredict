@@ -55,6 +55,27 @@ function all(sql, params = []) {
 
 function createSchema() {
   db.run(`
+    CREATE TABLE IF NOT EXISTS user_bets (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id    TEXT,
+      tournament  TEXT,
+      team1       TEXT NOT NULL,
+      team2       TEXT NOT NULL,
+      bet_on      TEXT NOT NULL,
+      odds        REAL NOT NULL,
+      amount      REAL NOT NULL,
+      ev          REAL,
+      kelly_pct   REAL,
+      match_date  TEXT,
+      format      TEXT,
+      status      TEXT DEFAULT 'pending',
+      result      TEXT,
+      profit      REAL,
+      note        TEXT,
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.run(`
     CREATE TABLE IF NOT EXISTS predictions (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       match_id       TEXT NOT NULL UNIQUE,
@@ -236,6 +257,77 @@ module.exports = {
 
   getBankrollHistory() {
     return all("SELECT amount, note, created_at FROM bankroll ORDER BY id ASC");
+  },
+
+  // ── Bets manuales del usuario ─────────────────────────────────────────────
+
+  addUserBet(b) {
+    db.run(`
+      INSERT INTO user_bets
+        (match_id, tournament, team1, team2, bet_on, odds, amount,
+         ev, kelly_pct, match_date, format, note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    `, [
+      b.match_id || null, b.tournament || '', b.team1, b.team2,
+      b.bet_on, b.odds, b.amount, b.ev || null, b.kelly_pct || null,
+      b.match_date || null, b.format || null, b.note || null,
+    ]);
+    persist();
+    return get('SELECT * FROM user_bets WHERE id=last_insert_rowid()');
+  },
+
+  getUserBets(limit = 100) {
+    return all('SELECT * FROM user_bets ORDER BY created_at DESC LIMIT ?', [limit]);
+  },
+
+  deleteUserBet(id) {
+    const bet = get('SELECT * FROM user_bets WHERE id=?', [id]);
+    if (!bet) return false;
+    // Si estaba pendiente con profit ya anotado, revertir bankroll
+    if (bet.status === 'resolved' && bet.profit != null) {
+      const current = this.getBankroll();
+      db.run("INSERT INTO bankroll (amount, note) VALUES (?, ?)",
+        [current - bet.profit, `Eliminar bet #${id}: reversión`]);
+    }
+    db.run('DELETE FROM user_bets WHERE id=?', [id]);
+    persist();
+    return true;
+  },
+
+  resolveUserBet(id, result) {
+    const bet = get('SELECT * FROM user_bets WHERE id=?', [id]);
+    if (!bet || bet.status !== 'pending') return null;
+    const won    = bet.bet_on === result;
+    const profit = won ? +(bet.amount * (bet.odds - 1)).toFixed(2) : -bet.amount;
+    db.run("UPDATE user_bets SET status='resolved', result=?, profit=? WHERE id=?",
+      [result, profit, id]);
+    const current = this.getBankroll();
+    db.run("INSERT INTO bankroll (amount, note) VALUES (?, ?)",
+      [current + profit, `Bet #${id} ${bet.bet_on} ${won ? 'WIN' : 'LOSS'} ${profit >= 0 ? '+' : ''}${profit.toFixed(2)}`]);
+    persist();
+    return { won, profit };
+  },
+
+  // Cuando scheduler resuelve un partido, resuelve automáticamente las user_bets pendientes
+  resolveUserBetsByMatch(matchId, winnerName) {
+    const pending = all(
+      "SELECT * FROM user_bets WHERE match_id=? AND status='pending'", [matchId]
+    );
+    for (const bet of pending) {
+      const won    = bet.bet_on?.toLowerCase() === winnerName?.toLowerCase();
+      const profit = won ? +(bet.amount * (bet.odds - 1)).toFixed(2) : -bet.amount;
+      db.run("UPDATE user_bets SET status='resolved', result=?, profit=? WHERE id=?",
+        [winnerName, profit, bet.id]);
+      const current = this.getBankroll();
+      db.run("INSERT INTO bankroll (amount, note) VALUES (?, ?)",
+        [current + profit, `Auto: Bet #${bet.id} ${bet.bet_on} ${won ? 'WIN' : 'LOSS'} ${profit >= 0 ? '+' : ''}${profit.toFixed(2)}`]);
+    }
+    if (pending.length) persist();
+  },
+
+  updateUserBetAmount(id, amount) {
+    db.run('UPDATE user_bets SET amount=? WHERE id=? AND status="pending"', [amount, id]);
+    persist();
   },
 
   // Exponer para rutas que lo necesiten
