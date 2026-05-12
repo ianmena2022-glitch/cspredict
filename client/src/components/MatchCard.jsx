@@ -47,21 +47,7 @@ export default function MatchCard({ prediction, settings }) {
 
   function openOneBet(e) {
     e.stopPropagation();
-    // En móvil intentar abrir la app nativa vía deep link, con fallback al sitio
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
-      // 1xbet app deep link (Android & iOS)
-      const appLink = 'oneexbet://line/esports/counter-strike-2';
-      const fallback = onebetUrl;
-      const start = Date.now();
-      window.location.href = appLink;
-      // Si después de 1.5s no abrió la app, redirigir al sitio
-      setTimeout(() => {
-        if (Date.now() - start < 2000) window.open(fallback, '_blank');
-      }, 1500);
-    } else {
-      window.open(onebetUrl, '_blank');
-    }
+    window.open(onebetUrl, '_blank');
   }
 
   if (!team1 || !team2 || !match) return null;
