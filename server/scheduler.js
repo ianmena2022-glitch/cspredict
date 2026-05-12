@@ -49,14 +49,36 @@ async function fetchFinishedMatches() {
   return res.data || [];
 }
 
+// Aliases para nombres que PandaScore usa distinto al mockData
+const TEAM_ALIASES = {
+  'natus vincere': 'navi',
+  'team vitality': 'vitality',
+  'faze clan': 'faze',
+  'g2 esports': 'g2',
+  'team liquid': 'liquid',
+  'team spirit': 'spirit',
+  'ninjas in pyjamas': 'nip',
+  'virtus.pro': 'vitcheese',
+  'virtus pro': 'vitcheese',
+  'eternal fire': 'eternalfire',
+  'gamerlegion': 'gamerlegion',
+  'gamers legion': 'gamerlegion',
+};
+
 function findTeamKey(name) {
   if (!name) return null;
-  const lower = name.toLowerCase();
+  const lower = name.toLowerCase().trim();
+
+  // Alias exacto primero
+  if (TEAM_ALIASES[lower]) return TEAM_ALIASES[lower];
+
   return Object.keys(teams).find(k => {
     const t = teams[k];
-    return lower.includes(k) ||
-           lower.includes(t.tag.toLowerCase()) ||
-           lower.includes(t.name.toLowerCase());
+    return lower === k ||
+           lower === t.tag.toLowerCase() ||
+           lower === t.name.toLowerCase() ||
+           lower.includes(t.name.toLowerCase()) ||
+           t.name.toLowerCase().includes(lower);
   }) || null;
 }
 

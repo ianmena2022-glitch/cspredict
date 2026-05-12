@@ -70,8 +70,8 @@ function predict(matchId, match, options = {}) {
   const dyn1 = match.dynamicStats1;
   const dyn2 = match.dynamicStats2;
 
-  // Merge: datos dinámicos tienen prioridad sobre estáticos
-  const hasData = !!(staticT1 && staticT2) || !!(dyn1 && dyn2);
+  // Necesitamos al menos UNA fuente (estática o dinámica) por cada equipo
+  const hasData = !!(staticT1 || dyn1) && !!(staticT2 || dyn2);
 
   if (!hasData) {
     const ref = removeMargin(match.odds.team1, match.odds.team2);
