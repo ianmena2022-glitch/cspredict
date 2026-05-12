@@ -97,6 +97,7 @@ function App() {
   const [tab, setTab]               = useState('matches');
   const [selected, setSelected]     = useState(null);
   const [filter, setFilter]         = useState('all');
+  const [confFilter, setConfFilter] = useState('all'); // all | high | medium | low
 
   async function load() {
     setLoading(true);
@@ -128,8 +129,9 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
-  const bets     = matches.filter(m => m.recommendation);
-  const filtered = filter === 'bets' ? bets : matches;
+  const bets = matches.filter(m => m.recommendation);
+  const filtered = (filter === 'bets' ? bets : matches)
+    .filter(m => confFilter === 'all' || m.confidence === confFilter);
 
   const roi = bankrollData
     ? +((bankrollData.amount - (bankrollData.history?.[0]?.amount || 100)) / (bankrollData.history?.[0]?.amount || 100) * 100).toFixed(2)
@@ -152,7 +154,8 @@ function App() {
 
         {tab === 'matches' && (
           <>
-            <div className="flex gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-4">
+              {/* Filtro valor */}
               <button onClick={() => setFilter('all')}
                 className={`text-sm px-3 py-1.5 rounded-lg transition-all
                   ${filter === 'all' ? 'bg-blue-500/20 border border-blue-500/40 text-blue-400' : 'text-slate-400 hover:text-white'}`}>
@@ -163,6 +166,26 @@ function App() {
                   ${filter === 'bets' ? 'bg-green-500/20 border border-green-500/40 text-green-400' : 'text-slate-400 hover:text-white'}`}>
                 Con valor ({bets.length})
               </button>
+
+              {/* Separador */}
+              <div className="w-px bg-slate-700 self-stretch mx-1" />
+
+              {/* Filtro confianza */}
+              {[
+                { id: 'all',    label: 'Toda confianza', color: filter === 'bets' || confFilter !== 'all' ? '' : '' },
+                { id: 'high',   label: '🔥 Alta',   active: 'bg-green-500/20 border border-green-500/40 text-green-400' },
+                { id: 'medium', label: '⚡ Media',  active: 'bg-yellow-500/20 border border-yellow-500/40 text-yellow-400' },
+                { id: 'low',    label: '⚠️ Baja',   active: 'bg-orange-500/20 border border-orange-500/40 text-orange-400' },
+              ].map(({ id, label, active }) => (
+                <button key={id} onClick={() => setConfFilter(id)}
+                  className={`text-sm px-3 py-1.5 rounded-lg transition-all
+                    ${confFilter === id
+                      ? (active || 'bg-slate-600/40 border border-slate-500/40 text-white')
+                      : 'text-slate-400 hover:text-white'}`}>
+                  {label}
+                </button>
+              ))}
+
               <button onClick={load} disabled={loading}
                 className="ml-auto flex items-center gap-1 text-sm text-slate-400 hover:text-white">
                 <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Actualizar
