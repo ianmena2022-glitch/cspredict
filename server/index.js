@@ -16,10 +16,17 @@ app.use(express.json());
 app.use('/api', apiRouter);
 
 // Servir el frontend en producción
+const fs = require('fs');
 const distPath = path.join(__dirname, '../client/dist');
+const indexHtml = path.join(distPath, 'index.html');
+
 app.use(express.static(distPath));
 app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  if (fs.existsSync(indexHtml)) {
+    res.sendFile(indexHtml);
+  } else {
+    res.status(200).send('<h2>CSPredict API running. Frontend build not found.</h2>');
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
