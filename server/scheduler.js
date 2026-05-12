@@ -18,6 +18,10 @@ const pandaApi = axios.create({
 const cache = { matches: null, ts: 0, pinnacle: null };
 const CACHE_TTL = 5 * 60 * 1000;
 
+// Cache de cuotas separado — se actualiza cada 30 min para ahorrar calls
+const oddsCache = { bookmaker: [], pinnacle: [], ts: 0 };
+const ODDS_TTL  = 30 * 60 * 1000;
+
 module.exports.cache = cache;
 
 async function fetchOdds() {
@@ -136,16 +140,30 @@ function mapMatch(m, oddsData, pinnacleData) {
   };
 }
 
+// ─── Actualizar cuotas cada 30 min (ahorra calls a TheOddsAPI) ───────────────
+async function refreshOdds() {
+  try {
+    const result = await fetchOdds();
+    oddsCache.bookmaker = result.bookmaker || [];
+    oddsCache.pinnacle  = result.pinnacle  || [];
+    oddsCache.ts = Date.now();
+    console.log(`[${new Date().toISOString()}] Cuotas actualizadas`);
+  } catch (err) {
+    console.error('refreshOdds error:', err.message);
+  }
+}
+
 // ─── Actualizar partidos y predicciones cada 5 minutos ───────────────────────
 async function refreshMatches() {
   try {
-    const [pandaData, oddsData] = await Promise.allSettled([
-      fetchLiveMatches(),
-      fetchOdds(),
-    ]);
+    // Cuotas: usar cache si tiene menos de 30 min, si no refrescar
+    if (!oddsCache.ts || Date.now() - oddsCache.ts > ODDS_TTL) {
+      await refreshOdds();
+    }
 
-    const rawMatches   = pandaData.status === 'fulfilled' && pandaData.value ? pandaData.value : null;
-    const { bookmaker = [], pinnacle = [] } = oddsData.status === 'fulfilled' ? oddsData.value : {};
+    const pandaData = await fetchLiveMatches().catch(() => null);
+    const rawMatches = pandaData || null;
+    const { bookmaker = [], pinnacle = [] } = oddsCache;
 
     // Sin fallback a mock — si no hay partidos reales, mostramos nada
     if (!rawMatches || rawMatches.length === 0) {
@@ -222,7 +240,8 @@ async function refreshMatches() {
 async function checkResults() {
   try {
     const finished = await fetchFinishedMatches();
-    const pending  = db.prepare("SELECT match_id FROM predictions WHERE status='pending'").all();
+    const dbModule = require('../db');
+    const pending  = dbModule.all("SELECT match_id FROM predictions WHERE status='pending'");
     const pendingIds = new Set(pending.map(p => p.match_id));
 
     for (const m of finished) {
@@ -249,15 +268,18 @@ async function checkResults() {
 
 function start() {
   // Ejecutar inmediatamente al arrancar
-  refreshMatches();
+  refreshOdds().then(() => refreshMatches());
 
-  // Cada 5 minutos: actualizar partidos y cuotas
+  // Cada 5 minutos: actualizar partidos (usa odds cacheadas)
   cron.schedule('*/5 * * * *', refreshMatches);
+
+  // Cada 30 minutos: refrescar cuotas de TheOddsAPI (~1,440 calls/mes vs 8,640)
+  cron.schedule('*/30 * * * *', refreshOdds);
 
   // Cada hora: verificar resultados y actualizar bankroll
   cron.schedule('0 * * * *', checkResults);
 
-  console.log('Scheduler iniciado: partidos cada 5min, resultados cada 1h');
+  console.log('Scheduler iniciado: partidos 5min | cuotas 30min | resultados 1h');
 }
 
-module.exports = { start, refreshMatches, checkResults, cache };
+module.exports = { start, refreshMatches, refreshOdds, checkResults, cache };
