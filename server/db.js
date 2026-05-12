@@ -105,9 +105,9 @@ function createSchema() {
   `);
   // Migración segura: agregar columnas nuevas si no existen
   const cols = all("PRAGMA table_info(predictions)").map(r => r.name);
-  for (const col of ['opening_odds1','opening_odds2','is_lan','rest_days1','rest_days2','odds_moved']) {
+  for (const col of ['opening_odds1','opening_odds2','is_lan','rest_days1','rest_days2','odds_moved','telegram_notified']) {
     if (!cols.includes(col)) {
-      const type = col.startsWith('is_lan') ? 'INTEGER DEFAULT 0'
+      const type = col.startsWith('is_lan') || col.startsWith('telegram') ? 'INTEGER DEFAULT 0'
                  : col.startsWith('odds_moved') ? 'TEXT'
                  : col.startsWith('opening') ? 'REAL' : 'INTEGER';
       db.run(`ALTER TABLE predictions ADD COLUMN ${col} ${type}`);
@@ -140,7 +140,10 @@ function seedDefaults() {
     min_edge:       '0.03',
     max_bet_pct:    '0.05',
     auto_track:     'true',
-    onebet_url:     'https://1xbet.com/en/line/esports/counter-strike-2',
+    onebet_url:          'https://1xbet.com/en/line/esports/counter-strike-2',
+    telegram_token:      '',
+    telegram_chat_id:    '',
+    telegram_confidences: 'high',
   };
   for (const [k, v] of Object.entries(defaults)) {
     db.run("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", [k, v]);
@@ -327,6 +330,16 @@ module.exports = {
 
   updateUserBetAmount(id, amount) {
     db.run('UPDATE user_bets SET amount=? WHERE id=? AND status="pending"', [amount, id]);
+    persist();
+  },
+
+  isTelegramNotified(matchId) {
+    const row = get("SELECT telegram_notified FROM predictions WHERE match_id=?", [matchId]);
+    return !!(row?.telegram_notified);
+  },
+
+  markTelegramNotified(matchId) {
+    db.run("UPDATE predictions SET telegram_notified=1 WHERE match_id=?", [matchId]);
     persist();
   },
 

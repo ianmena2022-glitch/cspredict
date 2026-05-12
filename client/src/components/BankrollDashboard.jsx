@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Target, BarChart2, Settings } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, BarChart2, Settings, Send } from 'lucide-react';
 import { updateBankroll, updateSettings } from '../api';
 
 function StatBox({ label, value, sub, color = 'text-white' }) {
@@ -48,6 +48,7 @@ export default function BankrollDashboard({ stats, bankrollData, settings, onRef
   const [newAmount, setNewAmount]       = useState('');
   const [editSettings, setEditSettings] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings || {});
+  const [testStatus, setTestStatus]     = useState(null); // null | 'ok' | 'error'
 
   const { amount = 0, history = [] } = bankrollData || {};
   const s = stats || {};
@@ -68,6 +69,15 @@ export default function BankrollDashboard({ stats, bankrollData, settings, onRef
     await updateSettings(localSettings);
     setEditSettings(false);
     onRefresh();
+  }
+
+  async function testTelegram() {
+    setTestStatus(null);
+    try {
+      const res = await fetch('/api/telegram/test', { method: 'POST' });
+      setTestStatus(res.ok ? 'ok' : 'error');
+    } catch { setTestStatus('error'); }
+    setTimeout(() => setTestStatus(null), 4000);
   }
 
   return (
@@ -132,6 +142,39 @@ export default function BankrollDashboard({ stats, bankrollData, settings, onRef
                   className="w-full bg-[#111827] border border-[#1e2d45] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-blue-500 placeholder:text-slate-600" />
               </div>
             ))}
+            {/* Telegram */}
+            <div className="border-t border-[#1e2d45] pt-3 mt-1">
+              <div className="flex items-center gap-1 text-xs text-slate-300 mb-2 font-medium">
+                <Send size={11} /> Notificaciones Telegram
+              </div>
+              <div className="text-xs text-slate-500 mb-2 space-y-1">
+                <div>1. Hablá con <span className="text-blue-400">@BotFather</span> en Telegram → /newbot → copiá el token</div>
+                <div>2. Hablá con tu bot, luego abrí <span className="text-blue-400">@userinfobot</span> para obtener tu Chat ID</div>
+              </div>
+              {[
+                { key: 'telegram_token',       label: 'Bot Token',    placeholder: '123456:ABC-DEF...' },
+                { key: 'telegram_chat_id',     label: 'Chat ID',      placeholder: '123456789' },
+                { key: 'telegram_confidences', label: 'Confianzas (separadas por coma)', placeholder: 'high,medium' },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <div className="text-xs text-slate-500 mb-0.5">{label}</div>
+                  <input type="text"
+                    value={localSettings[key] || ''}
+                    placeholder={placeholder}
+                    onChange={e => setLocalSettings(p => ({ ...p, [key]: e.target.value }))}
+                    className="w-full bg-[#111827] border border-[#1e2d45] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-blue-500 placeholder:text-slate-600" />
+                </div>
+              ))}
+              <button onClick={async () => { await saveSettings(); setTimeout(testTelegram, 500); }}
+                className={`mt-2 w-full flex items-center justify-center gap-1.5 text-sm px-3 py-1.5 rounded transition-all
+                  ${testStatus === 'ok'    ? 'bg-green-500/20 border border-green-500/40 text-green-400'
+                  : testStatus === 'error' ? 'bg-red-500/20 border border-red-500/40 text-red-400'
+                  : 'bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-400'}`}>
+                <Send size={12} />
+                {testStatus === 'ok' ? '✓ Mensaje enviado' : testStatus === 'error' ? '✗ Error — verificá los datos' : 'Guardar y probar bot'}
+              </button>
+            </div>
+
             <button onClick={saveSettings}
               className="bg-blue-500 hover:bg-blue-600 text-white text-sm px-3 py-1.5 rounded w-full mt-1">
               Guardar configuración

@@ -78,7 +78,8 @@ router.get('/settings', (req, res) => {
 });
 
 router.post('/settings', (req, res) => {
-  const allowed = ['kelly_fraction', 'min_ev', 'min_edge', 'max_bet_pct', 'auto_track', 'onebet_url'];
+  const allowed = ['kelly_fraction', 'min_ev', 'min_edge', 'max_bet_pct', 'auto_track', 'onebet_url',
+                  'telegram_token', 'telegram_chat_id', 'telegram_confidences'];
   for (const [k, v] of Object.entries(req.body)) {
     if (allowed.includes(k)) updateSetting(k, v);
   }
@@ -128,6 +129,14 @@ router.post('/resolve/:matchId', (req, res) => {
   const result = resolveMatch(req.params.matchId, winner);
   if (!result) return res.status(404).json({ error: 'Partido no encontrado o ya resuelto' });
   res.json(result);
+});
+
+// ── Telegram ──────────────────────────────────────────────────────────────────
+router.post('/telegram/test', async (req, res) => {
+  const { sendTest } = require('../telegram');
+  const ok = await sendTest();
+  if (ok) res.json({ ok: true });
+  else res.status(400).json({ error: 'No se pudo enviar. Verificá el token y chat_id.' });
 });
 
 // ── Cuotas bajo demanda (lee del cache, sin calls extra a TheOddsAPI) ─────────

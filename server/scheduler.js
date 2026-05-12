@@ -4,6 +4,7 @@ const { teams, upcomingMatches } = require('./data/mockData');
 const { predictAll } = require('./predictor');
 const { getTeamStats } = require('./teamStats');
 const { db, savePrediction, resolveMatch, resolveUserBetsByMatch, getBankroll, getSettings } = require('./db');
+const telegram = require('./telegram');
 
 const PANDA_KEY = process.env.PANDASCORE_API_KEY;
 const ODDS_KEY  = process.env.ODDS_API_KEY;
@@ -231,6 +232,10 @@ async function refreshMatches() {
     cache.matches = predictions;
     cache.ts = Date.now();
     console.log(`[${new Date().toISOString()}] Partidos actualizados: ${predictions.length}`);
+
+    // Notificar por Telegram las bets nuevas que cumplan el filtro de confianza
+    const dbModule = require('./db');
+    telegram.notifyBets(predictions, dbModule).catch(e => console.error('telegram notify:', e.message));
   } catch (err) {
     console.error('refreshMatches error:', err.message);
   }
