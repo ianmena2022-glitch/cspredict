@@ -129,9 +129,12 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
+  const CONF_ORDER = { high: 0, medium: 1, low: 2, neutral: 3, no_data: 4 };
   const bets = matches.filter(m => m.recommendation);
   const filtered = (filter === 'bets' ? bets : matches)
-    .filter(m => confFilter === 'all' || m.confidence === confFilter);
+    .filter(m => confFilter === 'all' || m.confidence === confFilter)
+    .slice()
+    .sort((a, b) => (CONF_ORDER[a.confidence] ?? 5) - (CONF_ORDER[b.confidence] ?? 5));
 
   const roi = bankrollData
     ? +((bankrollData.amount - (bankrollData.history?.[0]?.amount || 100)) / (bankrollData.history?.[0]?.amount || 100) * 100).toFixed(2)
