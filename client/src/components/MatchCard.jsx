@@ -1,4 +1,4 @@
-import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign } from 'lucide-react';
 
 const TIER_COLOR = {
   S: 'text-yellow-400 bg-yellow-400/10',
@@ -37,7 +37,7 @@ function ProbBar({ p1, p2 }) {
 }
 
 export default function MatchCard({ prediction }) {
-  const { match, team1, team2, recommendation, confidence } = prediction;
+  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed } = prediction;
   const isRec1 = recommendation === match.team1;
   const isRec2 = recommendation === match.team2;
 
@@ -105,6 +105,20 @@ export default function MatchCard({ prediction }) {
         <div className="flex flex-wrap gap-2 mb-3">
           {team1.streakNote && <span className="text-xs bg-[#111827] px-2 py-1 rounded">{team1.streakNote} {team1.tag}</span>}
           {team2.streakNote && <span className="text-xs bg-[#111827] px-2 py-1 rounded">{team2.streakNote} {team2.tag}</span>}
+        </div>
+      )}
+
+      {/* Kelly bet amount */}
+      {recommendation && kellyAmount > 0 && (
+        <div className="mb-3 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-1 text-green-400 text-xs font-bold">
+            <DollarSign size={13} />
+            Apostar: ${kellyAmount.toFixed(2)}
+          </div>
+          <div className="text-xs text-slate-400">
+            Kelly {kellyPct?.toFixed(1)}%
+            {pinnacleUsed && <span className="ml-1 text-blue-400">· vs Pinnacle</span>}
+          </div>
         </div>
       )}
 

@@ -1,21 +1,15 @@
 const BASE = '/api';
 
-export async function getMatches() {
-  const r = await fetch(`${BASE}/matches`);
-  return r.json();
-}
+export const getMatches    = () => fetch(`${BASE}/matches`).then(r => r.json());
+export const getRankings   = () => fetch(`${BASE}/rankings`).then(r => r.json());
+export const getStatus     = () => fetch(`${BASE}/status`).then(r => r.json());
+export const getBankroll   = () => fetch(`${BASE}/bankroll`).then(r => r.json());
+export const getStats      = () => fetch(`${BASE}/stats`).then(r => r.json());
+export const getHistory    = (limit = 50) => fetch(`${BASE}/history?limit=${limit}`).then(r => r.json());
+export const getSettings   = () => fetch(`${BASE}/settings`).then(r => r.json());
 
-export async function getRankings() {
-  const r = await fetch(`${BASE}/rankings`);
-  return r.json();
-}
+export const updateSettings = (body) =>
+  fetch(`${BASE}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
 
-export async function getTeams() {
-  const r = await fetch(`${BASE}/teams`);
-  return r.json();
-}
-
-export async function getStatus() {
-  const r = await fetch(`${BASE}/status`);
-  return r.json();
-}
+export const updateBankroll = (amount, note) =>
+  fetch(`${BASE}/bankroll`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount, note }) }).then(r => r.json());
