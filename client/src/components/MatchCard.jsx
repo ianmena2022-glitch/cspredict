@@ -1,4 +1,5 @@
-import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign } from 'lucide-react';
+import { useState } from 'react';
+import { Clock, Tv, TrendingUp, AlertCircle, CheckCircle, DollarSign, Copy, ExternalLink } from 'lucide-react';
 
 const TIER_COLOR = {
   S: 'text-yellow-400 bg-yellow-400/10',
@@ -7,6 +8,8 @@ const TIER_COLOR = {
 };
 const CONF_COLOR = { high: 'text-green-400', medium: 'text-yellow-400', low: 'text-orange-400', neutral: 'text-slate-400' };
 const CONF_LABEL = { high: 'ALTA', medium: 'MEDIA', low: 'BAJA', neutral: 'SIN BET' };
+
+const ONEBET_URL = 'https://1xbet.com/en/line/esports/counter-strike-2';
 
 function timeUntil(dateStr) {
   const diff = new Date(dateStr) - Date.now();
@@ -38,22 +41,41 @@ function ProbBar({ p1, p2 }) {
 
 export default function MatchCard({ prediction }) {
   const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan } = prediction;
+  const [copied, setCopied] = useState(false);
+
   if (!team1 || !team2 || !match) return null;
   const isRec1 = recommendation === match.team1;
   const isRec2 = recommendation === match.team2;
+  const recTeam = isRec1 ? team1 : isRec2 ? team2 : null;
+  const recOdds = isRec1 ? match.odds.team1 : match.odds.team2;
 
-  // Parsear movimiento de cuotas desde el match si viene del backend
   const oddsMovement = match?.oddsMovement || prediction?.oddsMovement || null;
+
+  function copyBet() {
+    if (!recTeam) return;
+    const text = [
+      `🎮 ${team1.tag} vs ${team2.tag}`,
+      `📋 ${match.tournament} · ${match.format?.toUpperCase()} · ${timeUntil(match.date)}`,
+      `✅ APOSTAR: ${recTeam.tag} @ ${recOdds}x`,
+      `💵 Monto: $${kellyAmount?.toFixed(2)} (Kelly ${kellyPct?.toFixed(1)}%)`,
+      `📊 Prob: ${recTeam.probability}% · EV: +${(recTeam.ev * 100).toFixed(1)}%`,
+      `🔗 1xbet CS2: ${ONEBET_URL}`,
+    ].join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <div className="bg-[#1a2235] border border-[#1e2d45] rounded-xl p-4 hover:border-blue-500/40 transition-all">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs px-2 py-0.5 rounded font-bold ${TIER_COLOR[match.tournamentTier] || TIER_COLOR.B}`}>
             TIER {match.tournamentTier}
           </span>
-          <span className="text-xs text-slate-400 truncate max-w-[180px]">{match.tournament}</span>
+          <span className="text-xs text-slate-400 truncate max-w-[140px]">{match.tournament}</span>
           {insufficientData && (
             <span className="text-xs px-2 py-0.5 rounded font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
               SIN DATOS
@@ -70,7 +92,7 @@ export default function MatchCard({ prediction }) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 text-xs text-slate-400">
+        <div className="flex items-center gap-1 text-xs text-slate-400 shrink-0">
           <Clock size={12} />
           <span>{timeUntil(match.date)}</span>
         </div>
@@ -161,6 +183,29 @@ export default function MatchCard({ prediction }) {
         </div>
       )}
 
+      {/* Action buttons */}
+      {recommendation && kellyAmount > 0 && (
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); copyBet(); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium
+              bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600/50 transition-all">
+            <Copy size={12} />
+            {copied ? '¡Copiado!' : 'Copiar apuesta'}
+          </button>
+          <a
+            href={ONEBET_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium
+              bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-300 border border-blue-500/30 transition-all">
+            <ExternalLink size={12} />
+            Ir a 1xbet
+          </a>
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-3 border-t border-[#1e2d45]">
         <div className="flex items-center gap-2">
           {recommendation ? (
@@ -177,6 +222,7 @@ export default function MatchCard({ prediction }) {
           )}
         </div>
         <a href={match.stream} target="_blank" rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
           className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 transition-colors">
           <Tv size={12} /> Stream
         </a>
