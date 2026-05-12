@@ -185,8 +185,8 @@ function predict(matchId, match, options = {}) {
     kellyPct    = side === 1 ? k1 : k2;
     kellyAmount = +(bankroll * kellyPct).toFixed(2);
     const ev = side === 1 ? ev1 : ev2;
-    if (ev > 0.15) confidence = 'high';
-    else if (ev > 0.08) confidence = 'medium';
+    if (ev > 0.12) confidence = 'high';
+    else if (ev > 0.07) confidence = 'medium';
     else confidence = 'low';
   }
 
