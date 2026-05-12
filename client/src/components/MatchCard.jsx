@@ -38,6 +38,7 @@ function ProbBar({ p1, p2 }) {
 
 export default function MatchCard({ prediction }) {
   const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed } = prediction;
+  if (!team1 || !team2 || !match) return null;
   const isRec1 = recommendation === match.team1;
   const isRec2 = recommendation === match.team2;
 

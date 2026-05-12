@@ -169,7 +169,11 @@ function predict(matchId, match, options = {}) {
 }
 
 function predictAll(matches, options = {}) {
-  return matches.map(m => ({ ...predict(m.id, m, options), match: m })).filter(Boolean);
+  return matches.map(m => {
+    const p = predict(m.id, m, options);
+    if (!p) return null;
+    return { ...p, match: m };
+  }).filter(Boolean);
 }
 
 module.exports = { predict, predictAll };
