@@ -7,7 +7,7 @@ const scheduler = require('../scheduler');
 
 function getLiveData() {
   const { cache } = scheduler;
-  if (cache.matches && Date.now() - cache.ts < 5 * 60 * 1000) {
+  if (cache.matches && cache.matches.length > 0 && Date.now() - cache.ts < 5 * 60 * 1000) {
     return { data: cache.matches, source: 'live' };
   }
   const settings = getSettings();

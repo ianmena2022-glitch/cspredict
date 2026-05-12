@@ -133,7 +133,12 @@ async function refreshMatches() {
       minEdge:       parseFloat(settings.min_edge       || 0.03),
     };
 
-    const predictions = predictAll(matchList, options);
+    let predictions = predictAll(matchList, options);
+
+    // Si PandaScore no devolvió nada útil, usar datos mock como base
+    if (predictions.length === 0) {
+      predictions = predictAll(upcomingMatches, options);
+    }
 
     // Guardar en DB
     for (const p of predictions) {
