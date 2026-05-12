@@ -3,7 +3,7 @@ const router  = express.Router();
 const { upcomingMatches } = require('../data/mockData');
 const { predictAll }      = require('../predictor');
 const { db, getBankroll, getSettings, updateSetting, getPredictions, getStats, getBankrollHistory,
-        addUserBet, getUserBets, deleteUserBet, resolveUserBet, updateUserBetAmount } = require('../db');
+        addUserBet, getUserBets, deleteUserBet, resolveUserBet, updateUserBetAmount, getUserBetStats } = require('../db');
 const scheduler = require('../scheduler');
 
 function getLiveData() {
@@ -54,17 +54,21 @@ router.get('/history', (req, res) => {
   res.json({ data: getPredictions(limit) });
 });
 
-// ── Estadísticas globales ─────────────────────────────────────────────────────
+// ── Estadísticas globales (basadas en bets manuales del usuario) ──────────────
 router.get('/stats', (req, res) => {
-  const stats    = getStats();
+  const stats    = getUserBetStats();
   const bankroll = getBankroll();
   const history  = getBankrollHistory();
   const initial  = history[0]?.amount || 100;
+  // ROI basado en profit real de user_bets
+  const profit   = stats?.total_profit || 0;
   res.json({
     ...stats,
+    bets_made: stats?.total || 0,
     bankroll,
-    roi: history.length > 1 ? +((bankroll - initial) / initial * 100).toFixed(2) : 0,
+    roi: initial > 0 ? +((profit / initial) * 100).toFixed(2) : 0,
     initialBankroll: initial,
+    total_profit: profit,
   });
 });
 

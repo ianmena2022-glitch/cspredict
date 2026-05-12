@@ -330,6 +330,20 @@ module.exports = {
     persist();
   },
 
+  getUserBetStats() {
+    return get(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status='resolved' THEN 1 ELSE 0 END) as resolved,
+        SUM(CASE WHEN status='resolved' AND profit >= 0 THEN 1 ELSE 0 END) as wins,
+        SUM(CASE WHEN status='resolved' AND profit < 0  THEN 1 ELSE 0 END) as losses,
+        SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) as pending,
+        SUM(COALESCE(profit, 0)) as total_profit,
+        AVG(CASE WHEN ev IS NOT NULL THEN ev END) as avg_ev
+      FROM user_bets
+    `);
+  },
+
   // Exponer para rutas que lo necesiten
   run: (...args) => { db.run(...args); persist(); },
   get,

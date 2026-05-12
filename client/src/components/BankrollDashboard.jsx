@@ -143,11 +143,11 @@ export default function BankrollDashboard({ stats, bankrollData, settings, onRef
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatBox label="Win Rate" value={`${winRate}%`} sub={`${s.wins || 0}W / ${s.losses || 0}L`} color="text-blue-400" />
-        <StatBox label="Bets totales" value={s.bets_made || 0} sub={`${s.resolved || 0} resueltas`} />
+        <StatBox label="Mis bets" value={s.bets_made || 0} sub={`${s.resolved || 0} resueltas · ${s.pending || 0} pendientes`} />
         <StatBox label="Profit total" value={`${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`}
           color={profit >= 0 ? 'text-green-400' : 'text-red-400'} />
         <StatBox label="EV promedio" value={s.avg_ev ? `${(s.avg_ev * 100).toFixed(1)}%` : '—'}
-          sub="en bets recomendadas" color="text-yellow-400" />
+          sub="en mis bets" color="text-yellow-400" />
       </div>
 
       {/* Gráfico */}
