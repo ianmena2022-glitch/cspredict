@@ -129,7 +129,7 @@ function App() {
     return () => clearInterval(t);
   }, []);
 
-  const CONF_ORDER = { high: 0, medium: 1, low: 2, neutral: 3, no_data: 4 };
+  const CONF_ORDER = { high: 0, medium: 1, low: 2, neutral: 3, no_data: 4, no_odds: 5 };
   const bets = matches.filter(m => m.recommendation);
   const filtered = (filter === 'bets' ? bets : matches)
     .filter(m => confFilter === 'all' || m.confidence === confFilter)

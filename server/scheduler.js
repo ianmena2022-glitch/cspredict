@@ -115,7 +115,8 @@ function mapMatch(m, oddsData, pinnacleData) {
   const odds1xbet   = extractOdds(oddsData,    t1.name, t2.name, 'onexbet');
   const oddsPinnacle = extractOdds(pinnacleData, t1.name, t2.name, 'pinnacle');
   const oddsAny     = extractOdds(oddsData,    t1.name, t2.name, '');
-  const finalOdds   = odds1xbet || oddsAny || { team1: 1.90, team2: 1.90 };
+  const finalOdds   = odds1xbet || oddsAny || null;
+  const oddsFallback = !finalOdds;
 
   // Detectar LAN: si hay location en el torneo y no dice "online"
   const loc = (m.tournament?.location || '').toLowerCase();
@@ -132,7 +133,8 @@ function mapMatch(m, oddsData, pinnacleData) {
     date: m.begin_at || m.scheduled_at,
     format: m.number_of_games === 1 ? 'bo1' : m.number_of_games === 3 ? 'bo3' : 'bo5',
     maps: [],
-    odds: finalOdds,
+    odds: finalOdds || { team1: 1.90, team2: 1.90 },
+    oddsFallback,
     pinnacleOdds: oddsPinnacle,
     stream: m.streams_list?.[0]?.raw_url || '#',
     live: m.status === 'running',

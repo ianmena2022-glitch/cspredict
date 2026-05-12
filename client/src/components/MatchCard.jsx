@@ -41,7 +41,7 @@ function ProbBar({ p1, p2 }) {
 }
 
 export default function MatchCard({ prediction, settings }) {
-  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan } = prediction;
+  const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan, noOdds } = prediction;
   const [accepted, setAccepted]       = useState(false);
   const [oddsVisible, setOddsVisible] = useState(false);
   const [liveOdds, setLiveOdds]       = useState(null);
@@ -193,7 +193,12 @@ export default function MatchCard({ prediction, settings }) {
       </div>
 
       {/* Cuotas bajo demanda */}
-      {!oddsVisible ? (
+      {noOdds ? (
+        <div className="w-full mb-3 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs
+          text-slate-600 border border-dashed border-slate-800 cursor-default">
+          Sin cuotas disponibles en TheOddsAPI
+        </div>
+      ) : !oddsVisible ? (
         <button
           onClick={revealOdds}
           className="w-full mb-3 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs
