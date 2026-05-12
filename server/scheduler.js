@@ -35,8 +35,8 @@ async function fetchOdds() {
 async function fetchLiveMatches() {
   if (!PANDA_KEY || PANDA_KEY === 'your_key_here') return null;
   const [upcoming, running] = await Promise.all([
-    pandaApi.get('/csgo/matches/upcoming', { params: { per_page: 20, sort: 'begin_at' } }),
-    pandaApi.get('/csgo/matches/running',  { params: { per_page: 10 } }),
+    pandaApi.get('/csgo/matches/upcoming', { params: { per_page: 50, sort: 'begin_at' } }),
+    pandaApi.get('/csgo/matches/running',  { params: { per_page: 20 } }),
   ]);
   return [...running.data, ...upcoming.data];
 }
