@@ -158,6 +158,34 @@ export default function MatchCard({ prediction, settings }) {
         <span>{team2.tag}</span>
       </div>
 
+      {/* Cuotas para verificar contra 1xbet */}
+      <div className="bg-[#111827] rounded-lg px-3 py-2 mb-3">
+        <div className="text-xs text-slate-500 mb-1.5 font-medium">Cuotas (verificar en 1xbet)</div>
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-xs text-slate-400">{team1.tag}</span>
+            <span className="text-base font-bold text-white font-mono">{match.odds.team1}x</span>
+            {match.pinnacleOdds?.team1 && (
+              <span className="text-xs text-blue-400 font-mono">P: {match.pinnacleOdds.team1}x</span>
+            )}
+          </div>
+          <div className="flex flex-col items-center gap-0.5 text-center">
+            <span className="text-xs text-slate-600">vs</span>
+            <span className="text-xs text-slate-500 font-mono">{match.format?.toUpperCase()}</span>
+          </div>
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-xs text-slate-400">{team2.tag}</span>
+            <span className="text-base font-bold text-white font-mono">{match.odds.team2}x</span>
+            {match.pinnacleOdds?.team2 && (
+              <span className="text-xs text-blue-400 font-mono">P: {match.pinnacleOdds.team2}x</span>
+            )}
+          </div>
+        </div>
+        {match.pinnacleOdds && (
+          <div className="text-xs text-blue-400/60 text-center mt-1">P = Pinnacle (referencia)</div>
+        )}
+      </div>
+
       {(team1.streakNote || team2.streakNote || team1.restNote || team2.restNote) && (
         <div className="flex flex-wrap gap-2 mb-3">
           {team1.streakNote && <span className="text-xs bg-[#111827] px-2 py-1 rounded">{team1.streakNote} {team1.tag}</span>}
