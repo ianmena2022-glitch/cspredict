@@ -188,7 +188,7 @@ function App() {
                   <div key={pred.matchId}
                     onClick={() => setSelected(selected?.matchId === pred.matchId ? null : pred)}
                     className="cursor-pointer">
-                    <MatchCard prediction={pred} />
+                    <MatchCard prediction={pred} settings={settings} />
                     {selected?.matchId === pred.matchId && <StatsPanel prediction={pred} />}
                   </div>
                 ))}

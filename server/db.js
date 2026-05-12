@@ -119,6 +119,7 @@ function seedDefaults() {
     min_edge:       '0.03',
     max_bet_pct:    '0.05',
     auto_track:     'true',
+    onebet_url:     'https://1xbet.com/en/line/esports/counter-strike-2',
   };
   for (const [k, v] of Object.entries(defaults)) {
     db.run("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", [k, v]);

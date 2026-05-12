@@ -120,13 +120,16 @@ export default function BankrollDashboard({ stats, bankrollData, settings, onRef
               { key: 'kelly_fraction', label: 'Fracción Kelly (0.25 = quarter Kelly)', type: 'number', step: '0.05' },
               { key: 'min_ev',         label: 'EV mínimo para recomendar (ej: 0.05 = 5%)', type: 'number', step: '0.01' },
               { key: 'min_edge',       label: 'Edge mínimo vs mercado (ej: 0.03 = 3%)', type: 'number', step: '0.01' },
-            ].map(({ key, label, type, step }) => (
+              { key: 'onebet_url',     label: 'URL de 1xbet (tu dominio regional)', type: 'text', step: null,
+                placeholder: 'https://1xbet.com/en/line/esports/counter-strike-2' },
+            ].map(({ key, label, type, step, placeholder }) => (
               <div key={key}>
                 <div className="text-xs text-slate-500 mb-0.5">{label}</div>
-                <input type={type} step={step}
+                <input type={type} step={step || undefined}
                   value={localSettings[key] || ''}
+                  placeholder={placeholder}
                   onChange={e => setLocalSettings(p => ({ ...p, [key]: e.target.value }))}
-                  className="w-full bg-[#111827] border border-[#1e2d45] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-blue-500" />
+                  className="w-full bg-[#111827] border border-[#1e2d45] rounded px-3 py-1.5 text-sm text-white outline-none focus:border-blue-500 placeholder:text-slate-600" />
               </div>
             ))}
             <button onClick={saveSettings}

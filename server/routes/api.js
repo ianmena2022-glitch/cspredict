@@ -70,7 +70,7 @@ router.get('/settings', (req, res) => {
 });
 
 router.post('/settings', (req, res) => {
-  const allowed = ['kelly_fraction', 'min_ev', 'min_edge', 'max_bet_pct', 'auto_track'];
+  const allowed = ['kelly_fraction', 'min_ev', 'min_edge', 'max_bet_pct', 'auto_track', 'onebet_url'];
   for (const [k, v] of Object.entries(req.body)) {
     if (allowed.includes(k)) updateSetting(k, v);
   }

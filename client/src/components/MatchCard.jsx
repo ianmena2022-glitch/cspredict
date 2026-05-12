@@ -9,7 +9,7 @@ const TIER_COLOR = {
 const CONF_COLOR = { high: 'text-green-400', medium: 'text-yellow-400', low: 'text-orange-400', neutral: 'text-slate-400' };
 const CONF_LABEL = { high: 'ALTA', medium: 'MEDIA', low: 'BAJA', neutral: 'SIN BET' };
 
-const ONEBET_URL = 'https://1xbet.com/en/line/esports/counter-strike-2';
+const DEFAULT_ONEBET_URL = 'https://1xbet.com/en/line/esports/counter-strike-2';
 
 function timeUntil(dateStr) {
   const diff = new Date(dateStr) - Date.now();
@@ -39,9 +39,30 @@ function ProbBar({ p1, p2 }) {
   );
 }
 
-export default function MatchCard({ prediction }) {
+export default function MatchCard({ prediction, settings }) {
   const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan } = prediction;
   const [copied, setCopied] = useState(false);
+
+  const onebetUrl = settings?.onebet_url || DEFAULT_ONEBET_URL;
+
+  function openOneBet(e) {
+    e.stopPropagation();
+    // En móvil intentar abrir la app nativa vía deep link, con fallback al sitio
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      // 1xbet app deep link (Android & iOS)
+      const appLink = 'oneexbet://line/esports/counter-strike-2';
+      const fallback = onebetUrl;
+      const start = Date.now();
+      window.location.href = appLink;
+      // Si después de 1.5s no abrió la app, redirigir al sitio
+      setTimeout(() => {
+        if (Date.now() - start < 2000) window.open(fallback, '_blank');
+      }, 1500);
+    } else {
+      window.open(onebetUrl, '_blank');
+    }
+  }
 
   if (!team1 || !team2 || !match) return null;
   const isRec1 = recommendation === match.team1;
@@ -59,7 +80,7 @@ export default function MatchCard({ prediction }) {
       `✅ APOSTAR: ${recTeam.tag} @ ${recOdds}x`,
       `💵 Monto: $${kellyAmount?.toFixed(2)} (Kelly ${kellyPct?.toFixed(1)}%)`,
       `📊 Prob: ${recTeam.probability}% · EV: +${(recTeam.ev * 100).toFixed(1)}%`,
-      `🔗 1xbet CS2: ${ONEBET_URL}`,
+      `🔗 1xbet CS2: ${onebetUrl}`,
     ].join('\n');
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
@@ -193,16 +214,13 @@ export default function MatchCard({ prediction }) {
             <Copy size={12} />
             {copied ? '¡Copiado!' : 'Copiar apuesta'}
           </button>
-          <a
-            href={ONEBET_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
+          <button
+            onClick={openOneBet}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium
               bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-300 border border-blue-500/30 transition-all">
             <ExternalLink size={12} />
             Ir a 1xbet
-          </a>
+          </button>
         </div>
       )}
 
