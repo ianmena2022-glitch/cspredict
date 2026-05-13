@@ -79,7 +79,7 @@ export default function MatchCard({ prediction, settings }) {
   // Limpiar interval si se desmonta el componente
   useEffect(() => () => clearInterval(intervalRef.current), []);
 
-  const onebetUrl = settings?.onebet_url || DEFAULT_ONEBET_URL;
+  const onebetUrl = match?.fixturePath1xbet || settings?.onebet_url || DEFAULT_ONEBET_URL;
 
   function openOneBet(e) {
     e.stopPropagation();

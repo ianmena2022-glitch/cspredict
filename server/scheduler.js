@@ -25,26 +25,58 @@ const ODDS_TTL  = 30 * 60 * 1000;
 
 module.exports.cache = cache;
 
-// Extrae cuotas de la respuesta de /odds de OddsPapi para un bookmaker dado
-// La respuesta tiene: { odds: { [bookmakerSlug]: { markets: { [marketId]: { outcomes: { [outcomeId]: { price } } } } } } }
-function extractOddsPapi(oddsResp, bookSlug) {
-  if (!oddsResp) return null;
-  const bk = oddsResp[bookSlug];
-  if (!bk) return null;
-  // Buscar cualquier mercado con exactamente 2 outcomes (match winner)
-  const markets = bk.markets || {};
+// Extrae el precio de un outcome: { players: { '0': { price } } }
+function outcomePrice(outcome) {
+  if (!outcome) return null;
+  const p = Object.values(outcome.players || {})[0];
+  return p?.active !== false ? (p?.price ?? null) : null;
+}
+
+// Extrae cuotas h2h de un bookmaker dado dentro de bookmakerOdds
+// Estrategia: busca market con exactamente 2 outcomes activos (match winner)
+function extractBookmakerH2H(bkData) {
+  if (!bkData?.bookmakerIsActive) return null;
+  const markets = bkData.markets || {};
+
+  // Preferir market 171 (h2h estándar en OddsPapi)
+  const mkt171 = markets['171'];
+  if (mkt171) {
+    const o171 = outcomePrice(mkt171.outcomes?.['171']);
+    const o172 = outcomePrice(mkt171.outcomes?.['172']);
+    if (o171 && o172) return { team1: +o171.toFixed(2), team2: +o172.toFixed(2) };
+  }
+
+  // Fallback: buscar cualquier mercado con exactamente 2 outcomes activos
   for (const mkt of Object.values(markets)) {
     const outcomes = Object.values(mkt.outcomes || {});
     if (outcomes.length !== 2) continue;
-    const prices = outcomes.map(o => {
-      const playerPrices = Object.values(o.players || {});
-      return playerPrices[0]?.price ?? o.price ?? null;
-    });
-    if (prices[0] && prices[1]) {
-      return { team1: +parseFloat(prices[0]).toFixed(2), team2: +parseFloat(prices[1]).toFixed(2) };
+    const prices = outcomes.map(o => outcomePrice(o)).filter(Boolean);
+    if (prices.length === 2) {
+      return { team1: +prices[0].toFixed(2), team2: +prices[1].toFixed(2) };
     }
   }
   return null;
+}
+
+// Extrae cuotas h2h de la respuesta de /odds priorizando: 1xbet → pinnacle → primer bookmaker disponible
+function extractOddsPapi(oddsResp) {
+  if (!oddsResp) return { odds1xbet: null, oddsPinnacle: null, oddsAny: null };
+  const bkOdds = oddsResp.bookmakerOdds || oddsResp;
+
+  const odds1xbet   = extractBookmakerH2H(bkOdds['1xbet']);
+  const oddsPinnacle = extractBookmakerH2H(bkOdds['pinnacle']);
+
+  // Fallback: primer bookmaker que tenga cuotas h2h válidas
+  let oddsAny = null;
+  for (const bkData of Object.values(bkOdds)) {
+    const h2h = extractBookmakerH2H(bkData);
+    if (h2h) { oddsAny = h2h; break; }
+  }
+
+  // Extraer fixturePath de 1xbet para deep link
+  const fixturePath1xbet = bkOdds['1xbet']?.fixturePath || null;
+
+  return { odds1xbet, oddsPinnacle, oddsAny, fixturePath1xbet };
 }
 
 async function fetchOdds() {
@@ -73,16 +105,16 @@ async function fetchOdds() {
         timeout: 10000,
       });
       const oddsData = oddsRes.data?.data || oddsRes.data || {};
-      // oddsData puede ser { [bookSlug]: { markets: ... } } directamente
-      const bookmakers = oddsData.odds || oddsData;
+      const { odds1xbet, oddsPinnacle, oddsAny, fixturePath1xbet } = extractOddsPapi(oddsData);
       return {
-        fixtureId:    f.fixtureId,
-        team1Name:    f.participant1Name,
-        team2Name:    f.participant2Name,
-        odds1xbet:    extractOddsPapi(bookmakers, '1xbet'),
-        oddsPinnacle: extractOddsPapi(bookmakers, 'pinnacle'),
-        oddsGgbet:    extractOddsPapi(bookmakers, 'ggbet'),
-        oddsRaw:      bookmakers, // guardamos para debug
+        fixtureId:       f.fixtureId,
+        team1Name:       f.participant1Name,
+        team2Name:       f.participant2Name,
+        odds1xbet,
+        oddsPinnacle,
+        oddsGgbet:       null, // ya cubierto por oddsAny
+        oddsAny,
+        fixturePath1xbet,
       };
     }));
     for (const s of settled) {
@@ -173,15 +205,15 @@ function mapMatch(m, oddsNorm) {
 
   const raw1xbet    = entry?.odds1xbet;
   const rawPinnacle = entry?.oddsPinnacle;
-  const rawGgbet    = entry?.oddsGgbet;
+  const rawAny      = entry?.oddsAny;
 
   // Si están invertidos, dar vuelta las cuotas
   const flip = (o) => o ? { team1: o.team2, team2: o.team1 } : null;
   const odds1xbet    = flipped ? flip(raw1xbet)    : raw1xbet;
   const oddsPinnacle = flipped ? flip(rawPinnacle) : rawPinnacle;
-  const oddsGgbet    = flipped ? flip(rawGgbet)    : rawGgbet;
+  const oddsAny      = flipped ? flip(rawAny)      : rawAny;
 
-  const finalOdds   = odds1xbet || oddsPinnacle || oddsGgbet || null;
+  const finalOdds    = odds1xbet || oddsPinnacle || oddsAny || null;
   const oddsFallback = !finalOdds;
 
   // Detectar LAN: si hay location en el torneo y no dice "online"
@@ -202,7 +234,8 @@ function mapMatch(m, oddsNorm) {
     odds: finalOdds || { team1: 1.90, team2: 1.90 },
     oddsFallback,
     pinnacleOdds: oddsPinnacle,
-    oddsSource: odds1xbet ? '1xbet' : oddsPinnacle ? 'pinnacle' : oddsGgbet ? 'ggbet' : null,
+    oddsSource: odds1xbet ? '1xbet' : oddsPinnacle ? 'pinnacle' : oddsAny ? 'otro' : null,
+    fixturePath1xbet: entry?.fixturePath1xbet || null,
     stream: m.streams_list?.[0]?.raw_url || '#',
     live: m.status === 'running',
     pandaId: m.id,
