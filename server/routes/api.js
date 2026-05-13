@@ -167,18 +167,39 @@ router.get('/odds/:matchId', async (req, res) => {
 // ── Debug: ver qué devuelven las APIs de cuotas ───────────────────────────────
 router.get('/debug/odds', async (req, res) => {
   const axios = require('axios');
-  const ODDS_KEY = process.env.ODDS_API_KEY;
-  const result = { key: ODDS_KEY ? ODDS_KEY.slice(0, 8) + '...' : 'NO KEY', theoddsapi: null, oddspapi: null };
+  const ODDS_KEY     = process.env.ODDS_API_KEY;
+  const THE_ODDS_KEY = process.env.THE_ODDS_API_KEY;
+  const result = {
+    oddspapi_key:  ODDS_KEY     ? ODDS_KEY.slice(0, 8)     + '...' : 'NO KEY',
+    theodds_key:   THE_ODDS_KEY ? THE_ODDS_KEY.slice(0, 8) + '...' : 'NO KEY',
+    theoddsapi: null, oddspapi: null,
+  };
 
-  // Probar TheOddsAPI
-  try {
-    const r = await axios.get('https://api.the-odds-api.com/v4/sports/esports_cs2/odds', {
-      params: { apiKey: ODDS_KEY, regions: 'eu,us', markets: 'h2h', oddsFormat: 'decimal' },
-      timeout: 10000,
-    });
-    result.theoddsapi = { status: 'ok', count: r.data?.length, sample: r.data?.[0] || null, remaining: r.headers['x-requests-remaining'] };
-  } catch (e) {
-    result.theoddsapi = { status: 'error', code: e.response?.status, message: e.response?.data?.message || e.message };
+  // Probar TheOddsAPI — primero listar sports disponibles, luego CS2
+  if (THE_ODDS_KEY) {
+    try {
+      // Listar todos los sports esports disponibles en el plan
+      const rs = await axios.get('https://api.the-odds-api.com/v4/sports', {
+        params: { apiKey: THE_ODDS_KEY, all: true },
+        timeout: 10000,
+      });
+      const esports = (rs.data || []).filter(s => s.group?.toLowerCase().includes('esport') || s.key?.toLowerCase().includes('esport') || s.key?.toLowerCase().includes('cs'));
+      result.theoddsapi_sports = esports.map(s => s.key);
+
+      // Buscar el key correcto para CS2
+      const cs2Sport = esports.find(s => s.key?.includes('cs2') || s.key?.includes('csgo') || s.title?.toLowerCase().includes('counter'));
+      const sportKey = cs2Sport?.key || 'esports_cs2';
+
+      const r = await axios.get(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`, {
+        params: { apiKey: THE_ODDS_KEY, regions: 'eu,us', markets: 'h2h', oddsFormat: 'decimal' },
+        timeout: 10000,
+      });
+      result.theoddsapi = { status: 'ok', sportKey, count: r.data?.length, sample: r.data?.[0] || null, remaining: r.headers['x-requests-remaining'] };
+    } catch (e) {
+      result.theoddsapi = { status: 'error', code: e.response?.status, message: e.response?.data?.message || e.message };
+    }
+  } else {
+    result.theoddsapi = { status: 'no_key' };
   }
 
   // Probar OddsPapi
