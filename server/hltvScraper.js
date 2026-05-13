@@ -1,16 +1,22 @@
-// OddsPapi — reemplaza scraping HLTV (bloqueado por Cloudflare en datacenters)
+// Odds multi-source: OddsPapi (pre-match) + TheOddsAPI (pre-match + live)
 // Mantiene los mismos exports para compatibilidad con scheduler.js y api.js
 const axios = require('axios');
 
-const ODDS_KEY = process.env.ODDS_API_KEY;
-const BASE_URL = 'https://api.oddspapi.io/v4';
+const ODDS_KEY     = process.env.ODDS_API_KEY;      // OddsPapi
+const THE_ODDS_KEY = process.env.THE_ODDS_API_KEY;  // TheOddsAPI (the-odds-api.com)
 
-// Cache — misma estructura que antes
+const ODDSPAPI_URL  = 'https://api.oddspapi.io/v4';
+const THEODDS_URL   = 'https://api.the-odds-api.com/v4';
+
+// Cache OddsPapi (fixtures upcoming)
 const hltvCache = { fixtures: [], ts: 0 };
-const HLTV_TTL  = 30 * 60 * 1000;
+// Cache TheOddsAPI (todos los partidos con cuotas, live + upcoming)
+const theoddsCache = { matches: [], ts: 0 };
 
-// Extrae cuotas H2H del objeto bookmakerOdds de OddsPapi
-// Mercado 171 = H2H, outcome 171 = team1, 172 = team2
+const HLTV_TTL = 30 * 60 * 1000;
+
+// ── OddsPapi helpers ──────────────────────────────────────────────────────────
+
 function extractH2HOdds(bookmakerOdds) {
   if (!bookmakerOdds || typeof bookmakerOdds !== 'object') return null;
   for (const bm of Object.values(bookmakerOdds)) {
@@ -25,39 +31,101 @@ function extractH2HOdds(bookmakerOdds) {
   return null;
 }
 
-// Refresca lista de fixtures CS2 upcoming (1 request cada 30min)
-async function refreshHltvOdds() {
-  if (!ODDS_KEY) {
-    console.log('[OddsPapi] Sin ODDS_API_KEY, saltando');
-    return;
+// ── TheOddsAPI helpers ────────────────────────────────────────────────────────
+
+function fuzzyMatch(a, b) {
+  const al = a.toLowerCase().trim();
+  const bl = b.toLowerCase().trim();
+  return al.includes(bl) || bl.includes(al);
+}
+
+function extractTheOddsOdds(match, t1Name, t2Name) {
+  // Preferir Pinnacle (más sharp), sino primero disponible
+  const bookmakers = [...(match.bookmakers || [])].sort((a, b) =>
+    a.key === 'pinnacle' ? -1 : b.key === 'pinnacle' ? 1 : 0
+  );
+  for (const bm of bookmakers) {
+    const h2h = bm.markets?.find(m => m.key === 'h2h');
+    if (!h2h?.outcomes || h2h.outcomes.length < 2) continue;
+
+    // Intentar match por nombre de equipo
+    const out1 = h2h.outcomes.find(o => fuzzyMatch(o.name, t1Name));
+    const out2 = h2h.outcomes.find(o => fuzzyMatch(o.name, t2Name));
+
+    if (out1 && out2 && out1.price > 1 && out2.price > 1) {
+      return { team1: +out1.price.toFixed(2), team2: +out2.price.toFixed(2), source: bm.title };
+    }
+    // Fallback: primeros dos outcomes en orden
+    const [a, b2] = h2h.outcomes;
+    if (a?.price > 1 && b2?.price > 1) {
+      return { team1: +a.price.toFixed(2), team2: +b2.price.toFixed(2), source: bm.title };
+    }
   }
+  return null;
+}
+
+function findTheOddsEntry(t1Name, t2Name) {
+  return theoddsCache.matches.find(m => {
+    const h = m.home_team || '';
+    const a = m.away_team || '';
+    return (fuzzyMatch(h, t1Name) && fuzzyMatch(a, t2Name)) ||
+           (fuzzyMatch(h, t2Name) && fuzzyMatch(a, t1Name));
+  });
+}
+
+// ── Refresh functions ─────────────────────────────────────────────────────────
+
+async function refreshOddsPapi() {
+  if (!ODDS_KEY) return;
   try {
     const now  = new Date();
     const from = now.toISOString().slice(0, 10);
     const to   = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const r = await axios.get(`${BASE_URL}/fixtures`, {
+    const r = await axios.get(`${ODDSPAPI_URL}/fixtures`, {
       params: { apiKey: ODDS_KEY, sportId: 17, hasOdds: true, from, to },
       timeout: 10000,
     });
     const fixtures = r.data?.data || [];
     hltvCache.fixtures = fixtures
-      .filter(f => f.statusId !== 1) // excluir partidos live (requieren plan premium)
+      .filter(f => f.statusId !== 1)
       .map(f => ({
-        fixtureId:  f.fixtureId,
-        team1Name:  f.participant1Name,
-        team2Name:  f.participant2Name,
-        statusId:   f.statusId,
-        startTime:  f.startTime,
-        odds1xbet:  null, // se carga on-demand
+        fixtureId: f.fixtureId,
+        team1Name: f.participant1Name,
+        team2Name: f.participant2Name,
+        statusId:  f.statusId,
+        startTime: f.startTime,
+        odds1xbet: null,
       }));
     hltvCache.ts = Date.now();
-    console.log(`[OddsPapi] ${hltvCache.fixtures.length} fixtures cacheados (próximos 7 días)`);
+    console.log(`[OddsPapi] ${hltvCache.fixtures.length} fixtures pre-match cacheados`);
   } catch (err) {
-    console.error('[OddsPapi] refreshHltvOdds error:', err.message);
+    console.error('[OddsPapi] refresh error:', err.message);
   }
 }
 
-// Busca fixture por nombres de equipo (fuzzy match)
+async function refreshTheOddsApi() {
+  if (!THE_ODDS_KEY) return;
+  try {
+    const r = await axios.get(`${THEODDS_URL}/sports/esports_cs2/odds`, {
+      params: { apiKey: THE_ODDS_KEY, regions: 'eu,us', markets: 'h2h', oddsFormat: 'decimal' },
+      timeout: 10000,
+    });
+    theoddsCache.matches = r.data || [];
+    theoddsCache.ts = Date.now();
+    const live = theoddsCache.matches.filter(m => m.commence_time && new Date(m.commence_time) <= new Date()).length;
+    console.log(`[TheOddsAPI] ${theoddsCache.matches.length} partidos (${live} live), requests restantes: ${r.headers?.['x-requests-remaining'] ?? '?'}`);
+  } catch (err) {
+    console.error('[TheOddsAPI] refresh error:', err.response?.data?.message || err.message);
+  }
+}
+
+// Refresca ambas fuentes en paralelo
+async function refreshHltvOdds() {
+  await Promise.allSettled([refreshOddsPapi(), refreshTheOddsApi()]);
+}
+
+// ── Lookup ────────────────────────────────────────────────────────────────────
+
 function findHltvEntry(t1Name, t2Name) {
   if (!hltvCache.fixtures.length) return null;
   const n1 = t1Name.toLowerCase().trim();
@@ -72,33 +140,41 @@ function findHltvEntry(t1Name, t2Name) {
   });
 }
 
-// Fetch on-demand: obtiene cuotas para un partido específico
+// ── On-demand odds fetch ──────────────────────────────────────────────────────
+
 async function fetchHltvMatchOdds(t1Name, t2Name) {
-  if (!ODDS_KEY) return null;
-
-  const entry = findHltvEntry(t1Name, t2Name);
-  if (!entry?.fixtureId) return null;
-
-  // Si ya tenemos cuotas cacheadas del fixture
-  if (entry.odds1xbet) {
-    return { ...entry.odds1xbet, source: 'OddsPapi', matchUrl: null };
-  }
-
-  try {
-    const r = await axios.get(`${BASE_URL}/odds`, {
-      params: { apiKey: ODDS_KEY, fixtureId: entry.fixtureId },
-      timeout: 10000,
-    });
-    const bookmakerOdds = r.data?.data?.bookmakerOdds || r.data?.bookmakerOdds || {};
-    const odds = extractH2HOdds(bookmakerOdds);
-    if (odds) {
-      entry.odds1xbet = odds; // guardar en cache para próximas consultas
-      return { ...odds, source: 'OddsPapi', matchUrl: null };
+  // 1. Intentar TheOddsAPI (incluye live + pre-match, ya cacheado)
+  if (theoddsCache.matches.length) {
+    const entry = findTheOddsEntry(t1Name, t2Name);
+    if (entry) {
+      const odds = extractTheOddsOdds(entry, t1Name, t2Name);
+      if (odds) return { team1: odds.team1, team2: odds.team2, source: odds.source + ' (TheOddsAPI)', matchUrl: null };
     }
-  } catch (err) {
-    console.error('[OddsPapi] fetchMatchOdds error:', err.response?.data?.error?.message || err.message);
   }
+
+  // 2. Intentar OddsPapi (solo pre-match)
+  if (ODDS_KEY) {
+    const entry = findHltvEntry(t1Name, t2Name);
+    if (entry?.fixtureId) {
+      if (entry.odds1xbet) return { ...entry.odds1xbet, source: 'OddsPapi', matchUrl: null };
+      try {
+        const r = await axios.get(`${ODDSPAPI_URL}/odds`, {
+          params: { apiKey: ODDS_KEY, fixtureId: entry.fixtureId },
+          timeout: 10000,
+        });
+        const bOdds = r.data?.data?.bookmakerOdds || r.data?.bookmakerOdds || {};
+        const odds  = extractH2HOdds(bOdds);
+        if (odds) {
+          entry.odds1xbet = odds;
+          return { ...odds, source: 'OddsPapi', matchUrl: null };
+        }
+      } catch (err) {
+        console.error('[OddsPapi] fetchMatchOdds error:', err.response?.data?.error?.message || err.message);
+      }
+    }
+  }
+
   return null;
 }
 
-module.exports = { refreshHltvOdds, findHltvEntry, fetchHltvMatchOdds, hltvCache, HLTV_TTL };
+module.exports = { refreshHltvOdds, findHltvEntry, fetchHltvMatchOdds, hltvCache, theoddsCache, HLTV_TTL };

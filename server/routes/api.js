@@ -217,15 +217,19 @@ router.get('/debug/odds', async (req, res) => {
 router.get('/status', (req, res) => {
   const PANDA_KEY = process.env.PANDASCORE_API_KEY;
   const { cache } = scheduler;
-  const hltvModule = require('../hltvScraper');
-  const hltvCache = hltvModule.hltvCache || { fixtures: [], ts: 0 };
+  const hltvModule   = require('../hltvScraper');
+  const hltvCache    = hltvModule.hltvCache    || { fixtures: [], ts: 0 };
+  const theoddsCache = hltvModule.theoddsCache || { matches: [],  ts: 0 };
   res.json({
-    pandascore:    PANDA_KEY && PANDA_KEY !== 'your_key_here' ? 'connected' : 'no_key',
-    matchCount:    cache.matches?.length ?? 0,
-    cacheAge:      cache.ts ? Math.round((Date.now() - cache.ts) / 1000) + 's' : 'empty',
-    hltvFixtures:  hltvCache?.fixtures?.length ?? 0,
-    hltvAge:       hltvCache?.ts ? Math.round((Date.now() - hltvCache.ts) / 1000) + 's' : 'empty',
-    bankroll:      getBankroll(),
+    pandascore:       PANDA_KEY && PANDA_KEY !== 'your_key_here' ? 'connected' : 'no_key',
+    matchCount:       cache.matches?.length ?? 0,
+    cacheAge:         cache.ts ? Math.round((Date.now() - cache.ts) / 1000) + 's' : 'empty',
+    oddspapi:         hltvCache.fixtures.length > 0 ? 'ok' : (process.env.ODDS_API_KEY ? 'empty' : 'no_key'),
+    oddspapiFixtures: hltvCache.fixtures.length,
+    theoddsapi:       theoddsCache.matches.length > 0 ? 'ok' : (process.env.THE_ODDS_API_KEY ? 'empty' : 'no_key'),
+    theoddsMatches:   theoddsCache.matches.length,
+    oddsAge:          hltvCache.ts ? Math.round((Date.now() - hltvCache.ts) / 1000) + 's' : 'empty',
+    bankroll:         getBankroll(),
   });
 });
 
