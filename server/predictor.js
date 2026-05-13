@@ -73,24 +73,6 @@ function predict(matchId, match, options = {}) {
   // Necesitamos al menos UNA fuente (estática o dinámica) por cada equipo
   const hasData = !!(staticT1 || dyn1) && !!(staticT2 || dyn2);
 
-  // Sin cuotas reales — no se puede calcular EV ni recomendar
-  if (match.oddsFallback) {
-    const noOddsTeam = (name, tag) => ({
-      name, tag, logo: '🎮',
-      probability: 50, ev: 0, edge: 0, clv: 0,
-      scores: {}, streakNote: null, restNote: null,
-      refProb: 50, restDays: null, usingDynamic: false,
-    });
-    return {
-      matchId, insufficientData: false, noOdds: true,
-      team1: noOddsTeam(match.team1Name || match.team1, match.team1Name || match.team1),
-      team2: noOddsTeam(match.team2Name || match.team2, match.team2Name || match.team2),
-      recommendation: null, confidence: 'no_odds',
-      bestEv: 0, kellyPct: 0, kellyAmount: 0,
-      pinnacleUsed: false, weights: WEIGHTS,
-    };
-  }
-
   if (!hasData) {
     const ref = removeMargin(match.odds.team1, match.odds.team2);
     const baseTeam = (name, tag, ref) => ({
@@ -103,6 +85,7 @@ function predict(matchId, match, options = {}) {
     });
     return {
       matchId, insufficientData: true,
+      noOdds: !!match.oddsFallback,
       team1: baseTeam(match.team1Name || match.team1, match.team1Name || match.team1, ref.p1),
       team2: baseTeam(match.team2Name || match.team2, match.team2Name || match.team2, ref.p2),
       recommendation: null, confidence: 'no_data',
@@ -225,6 +208,7 @@ function predict(matchId, match, options = {}) {
   return {
     matchId,
     insufficientData: false,
+    noOdds: !!match.oddsFallback,
     usingDynamic: !!(dyn1 || dyn2),
     team1: {
       name: eff1.name, tag: eff1.tag, logo: eff1.logo,
