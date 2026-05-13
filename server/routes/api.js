@@ -139,29 +139,25 @@ router.post('/telegram/test', async (req, res) => {
   else res.status(400).json({ error: 'No se pudo enviar. Verificá el token y chat_id.' });
 });
 
-// ── Cuotas on-demand — 1 call a OddsPapi por partido, solo cuando el usuario lo pide ──
+// ── Cuotas on-demand — scrapea HLTV para el partido específico cuando el usuario lo pide ──
 router.get('/odds/:matchId', async (req, res) => {
-  const { cache, fetchOddsForFixture } = scheduler;
+  const { cache, fetchHltvMatchOdds } = scheduler;
   const prediction = (cache.matches || []).find(p => p.matchId === req.params.matchId || p.match?.id === req.params.matchId);
   if (!prediction) return res.status(404).json({ error: 'Partido no encontrado en cache' });
 
-  const fixtureId = prediction.match?.fixtureId;
-  if (!fixtureId) return res.status(404).json({ error: 'Sin fixture de OddsPapi para este partido' });
+  const t1 = prediction.match?.team1Name || prediction.team1?.name;
+  const t2 = prediction.match?.team2Name || prediction.team2?.name;
+  if (!t1 || !t2) return res.status(404).json({ error: 'Sin datos de equipos' });
 
   try {
-    const result = await fetchOddsForFixture(fixtureId);
-    if (!result) return res.status(404).json({ error: 'Sin cuotas disponibles' });
-
-    const { odds1xbet, oddsPinnacle, oddsAny, fixturePath1xbet } = result;
-    const finalOdds = odds1xbet || oddsPinnacle || oddsAny;
-    if (!finalOdds) return res.status(404).json({ error: 'Sin cuotas h2h disponibles' });
+    const result = await fetchHltvMatchOdds(t1, t2);
+    if (!result) return res.status(404).json({ error: 'Sin cuotas en HLTV para este partido' });
 
     res.json({
-      odds:             finalOdds,
-      pinnacleOdds:     oddsPinnacle,
-      oddsSource:       odds1xbet ? '1xbet' : oddsPinnacle ? 'pinnacle' : 'otro',
-      fixturePath1xbet: fixturePath1xbet || null,
-      updatedAt:        new Date().toISOString(),
+      odds:        { team1: result.team1, team2: result.team2 },
+      oddsSource:  result.source || '1xbet (HLTV)',
+      matchUrl:    result.matchUrl || null,
+      updatedAt:   new Date().toISOString(),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
