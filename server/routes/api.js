@@ -139,16 +139,33 @@ router.post('/telegram/test', async (req, res) => {
   else res.status(400).json({ error: 'No se pudo enviar. Verificá el token y chat_id.' });
 });
 
-// ── Cuotas bajo demanda (lee del cache, sin calls extra a TheOddsAPI) ─────────
-router.get('/odds/:matchId', (req, res) => {
-  const { cache } = scheduler;
-  const match = (cache.matches || []).find(p => p.matchId === req.params.matchId || p.match?.id === req.params.matchId);
-  if (!match) return res.status(404).json({ error: 'Partido no encontrado en cache' });
-  res.json({
-    odds:          match.match?.odds         || null,
-    pinnacleOdds:  match.match?.pinnacleOdds || null,
-    updatedAt:     cache.ts ? new Date(cache.ts).toISOString() : null,
-  });
+// ── Cuotas on-demand — 1 call a OddsPapi por partido, solo cuando el usuario lo pide ──
+router.get('/odds/:matchId', async (req, res) => {
+  const { cache, fetchOddsForFixture } = scheduler;
+  const prediction = (cache.matches || []).find(p => p.matchId === req.params.matchId || p.match?.id === req.params.matchId);
+  if (!prediction) return res.status(404).json({ error: 'Partido no encontrado en cache' });
+
+  const fixtureId = prediction.match?.fixtureId;
+  if (!fixtureId) return res.status(404).json({ error: 'Sin fixture de OddsPapi para este partido' });
+
+  try {
+    const result = await fetchOddsForFixture(fixtureId);
+    if (!result) return res.status(404).json({ error: 'Sin cuotas disponibles' });
+
+    const { odds1xbet, oddsPinnacle, oddsAny, fixturePath1xbet } = result;
+    const finalOdds = odds1xbet || oddsPinnacle || oddsAny;
+    if (!finalOdds) return res.status(404).json({ error: 'Sin cuotas h2h disponibles' });
+
+    res.json({
+      odds:             finalOdds,
+      pinnacleOdds:     oddsPinnacle,
+      oddsSource:       odds1xbet ? '1xbet' : oddsPinnacle ? 'pinnacle' : 'otro',
+      fixturePath1xbet: fixturePath1xbet || null,
+      updatedAt:        new Date().toISOString(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Debug: ver qué devuelven las APIs de cuotas ───────────────────────────────

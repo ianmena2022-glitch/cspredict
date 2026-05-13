@@ -79,51 +79,33 @@ function extractOddsPapi(oddsResp) {
   return { odds1xbet, oddsPinnacle, oddsAny, fixturePath1xbet };
 }
 
+// Solo trae la lista de fixtures (1 call cada 30min) — sin cuotas individuales
 async function fetchOdds() {
   if (!ODDS_KEY || ODDS_KEY === 'your_key_here') return [];
-
   const now  = new Date();
   const from = now.toISOString().slice(0, 10);
   const to   = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-  // 1) Obtener lista de fixtures con cuotas disponibles
-  const fixturesRes = await axios.get('https://api.oddspapi.io/v4/fixtures', {
+  const res  = await axios.get('https://api.oddspapi.io/v4/fixtures', {
     params: { apiKey: ODDS_KEY, sportId: 17, hasOdds: true, from, to },
     timeout: 15000,
   });
-  const fixtures = fixturesRes.data?.data || fixturesRes.data || [];
-  if (!Array.isArray(fixtures) || fixtures.length === 0) return [];
+  const fixtures = res.data?.data || res.data || [];
+  return Array.isArray(fixtures) ? fixtures.map(f => ({
+    fixtureId: f.fixtureId,
+    team1Name: f.participant1Name,
+    team2Name: f.participant2Name,
+  })) : [];
+}
 
-  // 2) Obtener cuotas para cada fixture en paralelo (máx 10 simultáneos)
-  const CHUNK = 10;
-  const result = [];
-  for (let i = 0; i < fixtures.length; i += CHUNK) {
-    const chunk = fixtures.slice(i, i + CHUNK);
-    const settled = await Promise.allSettled(chunk.map(async (f) => {
-      const oddsRes = await axios.get('https://api.oddspapi.io/v4/odds', {
-        params: { apiKey: ODDS_KEY, fixtureId: f.fixtureId },
-        timeout: 10000,
-      });
-      const oddsData = oddsRes.data?.data || oddsRes.data || {};
-      const { odds1xbet, oddsPinnacle, oddsAny, fixturePath1xbet } = extractOddsPapi(oddsData);
-      return {
-        fixtureId:       f.fixtureId,
-        team1Name:       f.participant1Name,
-        team2Name:       f.participant2Name,
-        odds1xbet,
-        oddsPinnacle,
-        oddsGgbet:       null, // ya cubierto por oddsAny
-        oddsAny,
-        fixturePath1xbet,
-      };
-    }));
-    for (const s of settled) {
-      if (s.status === 'fulfilled') result.push(s.value);
-    }
-  }
-
-  console.log(`[OddsPapi] ${result.length} fixtures procesados, con cuotas: ${result.filter(r => r.odds1xbet || r.oddsPinnacle || r.oddsGgbet).length}`);
-  return result;
+// Trae cuotas de un fixture específico — on-demand cuando el usuario clickea "Ver cuotas"
+async function fetchOddsForFixture(fixtureId) {
+  if (!ODDS_KEY || ODDS_KEY === 'your_key_here') return null;
+  const res = await axios.get('https://api.oddspapi.io/v4/odds', {
+    params: { apiKey: ODDS_KEY, fixtureId },
+    timeout: 10000,
+  });
+  const oddsData = res.data?.data || res.data || {};
+  return extractOddsPapi(oddsData);
 }
 
 async function fetchLiveMatches() {
@@ -196,25 +178,13 @@ function mapMatch(m, oddsNorm) {
   const t1Key = findTeamKey(t1.name) || `dyn_${t1.name}`;
   const t2Key = findTeamKey(t2.name) || `dyn_${t2.name}`;
 
+  // oddsNorm ahora solo tiene fixtureId + team names — sin cuotas reales
   const entry = findOddsEntry(oddsNorm, t1.name, t2.name);
 
-  // ¿Los equipos en OddsPapi están en orden inverso al de PandaScore?
-  const flipped = entry &&
-    (entry.team1Name?.toLowerCase().includes(t2.name.toLowerCase()) ||
-     t2.name.toLowerCase().includes(entry.team1Name?.toLowerCase() || ''));
-
-  const raw1xbet    = entry?.odds1xbet;
-  const rawPinnacle = entry?.oddsPinnacle;
-  const rawAny      = entry?.oddsAny;
-
-  // Si están invertidos, dar vuelta las cuotas
-  const flip = (o) => o ? { team1: o.team2, team2: o.team1 } : null;
-  const odds1xbet    = flipped ? flip(raw1xbet)    : raw1xbet;
-  const oddsPinnacle = flipped ? flip(rawPinnacle) : rawPinnacle;
-  const oddsAny      = flipped ? flip(rawAny)      : rawAny;
-
-  const finalOdds    = odds1xbet || oddsPinnacle || oddsAny || null;
-  const oddsFallback = !finalOdds;
+  // Si hay un fixture en OddsPapi, las cuotas se piden on-demand; marcamos oddsFallback=false
+  // para mostrar "Ver cuotas". Si no hay fixture, oddsFallback=true.
+  const oddsFallback = !entry;
+  const fixtureId    = entry?.fixtureId || null;
 
   // Detectar LAN: si hay location en el torneo y no dice "online"
   const loc = (m.tournament?.location || '').toLowerCase();
@@ -231,11 +201,12 @@ function mapMatch(m, oddsNorm) {
     date: m.begin_at || m.scheduled_at,
     format: m.number_of_games === 1 ? 'bo1' : m.number_of_games === 3 ? 'bo3' : 'bo5',
     maps: [],
-    odds: finalOdds || { team1: 1.90, team2: 1.90 },
+    odds: { team1: 1.90, team2: 1.90 }, // placeholder — cuotas reales se piden on-demand
     oddsFallback,
-    pinnacleOdds: oddsPinnacle,
-    oddsSource: odds1xbet ? '1xbet' : oddsPinnacle ? 'pinnacle' : oddsAny ? 'otro' : null,
-    fixturePath1xbet: entry?.fixturePath1xbet || null,
+    fixtureId,
+    pinnacleOdds: null,
+    oddsSource: null,
+    fixturePath1xbet: null,
     stream: m.streams_list?.[0]?.raw_url || '#',
     live: m.status === 'running',
     pandaId: m.id,
@@ -388,4 +359,4 @@ function start() {
   console.log('Scheduler iniciado: partidos 5min | cuotas 30min | resultados 1h');
 }
 
-module.exports = { start, refreshMatches, refreshOdds, checkResults, cache };
+module.exports = { start, refreshMatches, refreshOdds, checkResults, cache, fetchOddsForFixture };
