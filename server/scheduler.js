@@ -25,50 +25,73 @@ const ODDS_TTL  = 30 * 60 * 1000;
 
 module.exports.cache = cache;
 
-// Normaliza el array de fixtures de OddsPapi a un formato interno simple:
-// [ { team1Name, team2Name, odds1xbet: {team1, team2}, oddsPinnacle: {team1, team2} } ]
-function normalizeOddsPapi(fixtures) {
-  const result = [];
-  for (const f of fixtures) {
-    const p1 = f.participants?.[0];
-    const p2 = f.participants?.[1];
-    if (!p1 || !p2) continue;
-
-    const getPrice = (bookSlug) => {
-      const bk = f.bookmakers?.[bookSlug];
-      if (!bk) return null;
-      // Market 171 = match winner; outcomes 171=team1, 172=team2
-      const m = bk.markets?.['171'];
-      if (!m) return null;
-      const o1 = m.outcomes?.['171']?.players?.['0']?.price;
-      const o2 = m.outcomes?.['172']?.players?.['0']?.price;
-      if (!o1 || !o2) return null;
-      return { team1: +parseFloat(o1).toFixed(2), team2: +parseFloat(o2).toFixed(2) };
-    };
-
-    result.push({
-      team1Name:     p1.name,
-      team2Name:     p2.name,
-      fixtureId:     f.fixtureId,
-      odds1xbet:     getPrice('1xbet'),
-      oddsPinnacle:  getPrice('pinnacle'),
-      oddsGgbet:     getPrice('ggbet'),
+// Extrae cuotas de la respuesta de /odds de OddsPapi para un bookmaker dado
+// La respuesta tiene: { odds: { [bookmakerSlug]: { markets: { [marketId]: { outcomes: { [outcomeId]: { price } } } } } } }
+function extractOddsPapi(oddsResp, bookSlug) {
+  if (!oddsResp) return null;
+  const bk = oddsResp[bookSlug];
+  if (!bk) return null;
+  // Buscar cualquier mercado con exactamente 2 outcomes (match winner)
+  const markets = bk.markets || {};
+  for (const mkt of Object.values(markets)) {
+    const outcomes = Object.values(mkt.outcomes || {});
+    if (outcomes.length !== 2) continue;
+    const prices = outcomes.map(o => {
+      const playerPrices = Object.values(o.players || {});
+      return playerPrices[0]?.price ?? o.price ?? null;
     });
+    if (prices[0] && prices[1]) {
+      return { team1: +parseFloat(prices[0]).toFixed(2), team2: +parseFloat(prices[1]).toFixed(2) };
+    }
   }
-  return result;
+  return null;
 }
 
 async function fetchOdds() {
   if (!ODDS_KEY || ODDS_KEY === 'your_key_here') return [];
+
   const now  = new Date();
   const from = now.toISOString().slice(0, 10);
   const to   = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const res  = await axios.get('https://api.oddspapi.io/v4/fixtures', {
+
+  // 1) Obtener lista de fixtures con cuotas disponibles
+  const fixturesRes = await axios.get('https://api.oddspapi.io/v4/fixtures', {
     params: { apiKey: ODDS_KEY, sportId: 17, hasOdds: true, from, to },
     timeout: 15000,
   });
-  const fixtures = res.data?.data || res.data || [];
-  return normalizeOddsPapi(fixtures);
+  const fixtures = fixturesRes.data?.data || fixturesRes.data || [];
+  if (!Array.isArray(fixtures) || fixtures.length === 0) return [];
+
+  // 2) Obtener cuotas para cada fixture en paralelo (máx 10 simultáneos)
+  const CHUNK = 10;
+  const result = [];
+  for (let i = 0; i < fixtures.length; i += CHUNK) {
+    const chunk = fixtures.slice(i, i + CHUNK);
+    const settled = await Promise.allSettled(chunk.map(async (f) => {
+      const oddsRes = await axios.get('https://api.oddspapi.io/v4/odds', {
+        params: { apiKey: ODDS_KEY, fixtureId: f.fixtureId },
+        timeout: 10000,
+      });
+      const oddsData = oddsRes.data?.data || oddsRes.data || {};
+      // oddsData puede ser { [bookSlug]: { markets: ... } } directamente
+      const bookmakers = oddsData.odds || oddsData;
+      return {
+        fixtureId:    f.fixtureId,
+        team1Name:    f.participant1Name,
+        team2Name:    f.participant2Name,
+        odds1xbet:    extractOddsPapi(bookmakers, '1xbet'),
+        oddsPinnacle: extractOddsPapi(bookmakers, 'pinnacle'),
+        oddsGgbet:    extractOddsPapi(bookmakers, 'ggbet'),
+        oddsRaw:      bookmakers, // guardamos para debug
+      };
+    }));
+    for (const s of settled) {
+      if (s.status === 'fulfilled') result.push(s.value);
+    }
+  }
+
+  console.log(`[OddsPapi] ${result.length} fixtures procesados, con cuotas: ${result.filter(r => r.odds1xbet || r.oddsPinnacle || r.oddsGgbet).length}`);
+  return result;
 }
 
 async function fetchLiveMatches() {

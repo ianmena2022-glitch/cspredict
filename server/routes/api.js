@@ -178,7 +178,21 @@ router.get('/debug/odds', async (req, res) => {
       timeout: 10000,
     });
     const data = r.data?.data || r.data || [];
-    result.oddspapi = { status: 'ok', count: Array.isArray(data) ? data.length : typeof data, sample: Array.isArray(data) ? data[0] : data };
+    const firstFixture = Array.isArray(data) ? data[0] : null;
+    result.oddspapi = { status: 'ok', count: Array.isArray(data) ? data.length : typeof data, fixtureSample: firstFixture };
+
+    // Si hay un fixture, buscar sus cuotas
+    if (firstFixture?.fixtureId) {
+      try {
+        const ro = await axios.get('https://api.oddspapi.io/v4/odds', {
+          params: { apiKey: ODDS_KEY, fixtureId: firstFixture.fixtureId },
+          timeout: 10000,
+        });
+        result.oddspapi.oddsSample = ro.data?.data || ro.data;
+      } catch (e2) {
+        result.oddspapi.oddsError = e2.response?.data || e2.message;
+      }
+    }
   } catch (e) {
     result.oddspapi = { status: 'error', code: e.response?.status, message: e.response?.data?.message || e.message };
   }
