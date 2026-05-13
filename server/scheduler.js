@@ -1,11 +1,11 @@
 const cron = require('node-cron');
 const axios = require('axios');
-const { teams, upcomingMatches } = require('./data/mockData');
+const { teams } = require('./data/mockData');
 const { predictAll } = require('./predictor');
 const { getTeamStats } = require('./teamStats');
-const { db, savePrediction, resolveMatch, resolveUserBetsByMatch, getBankroll, getSettings } = require('./db');
+const { savePrediction, resolveMatch, resolveUserBetsByMatch, getBankroll, getSettings } = require('./db');
 const telegram = require('./telegram');
-const { refreshHltvOdds, findHltvEntry, fetchHltvMatchOdds, hltvCache } = require('./hltvScraper');
+const { refreshHltvOdds, findHltvEntry, fetchHltvMatchOdds } = require('./hltvScraper');
 
 const PANDA_KEY = process.env.PANDASCORE_API_KEY;
 
@@ -15,14 +15,9 @@ const pandaApi = axios.create({
   timeout: 10000,
 });
 
-// Cache compartido con api.js
 const cache = { matches: null, ts: 0 };
-const CACHE_TTL = 5 * 60 * 1000;
-
 module.exports.cache = cache;
 
-// Extrae el precio de un outcome: { players: { '0': { price } } }
-function outcomePrice(outcome) {
 async function fetchLiveMatches() {
   if (!PANDA_KEY || PANDA_KEY === 'your_key_here') return null;
   const [upcoming, running] = await Promise.all([
@@ -34,13 +29,10 @@ async function fetchLiveMatches() {
 
 async function fetchFinishedMatches() {
   if (!PANDA_KEY || PANDA_KEY === 'your_key_here') return [];
-  const res = await pandaApi.get('/csgo/matches/past', {
-    params: { per_page: 20, sort: '-end_at' },
-  });
+  const res = await pandaApi.get('/csgo/matches/past', { params: { per_page: 20, sort: '-end_at' } });
   return res.data || [];
 }
 
-// Aliases para nombres que PandaScore usa distinto al mockData
 const TEAM_ALIASES = {
   'natus vincere': 'navi',
   'team vitality': 'vitality',
@@ -59,10 +51,7 @@ const TEAM_ALIASES = {
 function findTeamKey(name) {
   if (!name) return null;
   const lower = name.toLowerCase().trim();
-
-  // Alias exacto primero
   if (TEAM_ALIASES[lower]) return TEAM_ALIASES[lower];
-
   return Object.keys(teams).find(k => {
     const t = teams[k];
     return lower === k ||
@@ -81,12 +70,10 @@ function mapMatch(m) {
   const t1Key = findTeamKey(t1.name) || `dyn_${t1.name}`;
   const t2Key = findTeamKey(t2.name) || `dyn_${t2.name}`;
 
-  // Buscar en cache de HLTV (scrapeado cada 30min, sin costo adicional)
   const hltvEntry  = findHltvEntry(t1.name, t2.name);
   const finalOdds  = hltvEntry?.odds1xbet || null;
   const oddsFallback = !finalOdds;
 
-  // Detectar LAN: si hay location en el torneo y no dice "online"
   const loc = (m.tournament?.location || '').toLowerCase();
   const isLan = loc !== '' && loc !== 'online';
 
@@ -113,23 +100,18 @@ function mapMatch(m) {
   };
 }
 
-// ─── Actualizar partidos y predicciones cada 5 minutos ───────────────────────
 async function refreshMatches() {
   try {
     const pandaData = await fetchLiveMatches().catch(() => null);
-    const rawMatches = pandaData || null;
-
-    // Sin fallback a mock — si no hay partidos reales, mostramos nada
-    if (!rawMatches || rawMatches.length === 0) {
+    if (!pandaData || pandaData.length === 0) {
       cache.matches = [];
       cache.ts = Date.now();
       console.log(`[${new Date().toISOString()}] Sin partidos de PandaScore`);
       return;
     }
 
-    const rawList = rawMatches.map(m => mapMatch(m)).filter(Boolean);
+    const rawList = pandaData.map(m => mapMatch(m)).filter(Boolean);
 
-    // Enriquecer con stats dinámicos de PandaScore (winRate real, forma, descanso, LAN)
     const matchList = await Promise.all(rawList.map(async (m) => {
       const [ds1, ds2] = await Promise.allSettled([
         getTeamStats(m.team1PandaId, m.team1Name),
@@ -142,9 +124,9 @@ async function refreshMatches() {
       };
     }));
 
-    const settings  = getSettings();
-    const bankroll  = getBankroll();
-    const options   = {
+    const settings = getSettings();
+    const bankroll = getBankroll();
+    const options  = {
       bankroll,
       kellyFraction: parseFloat(settings.kelly_fraction || 0.25),
       minEv:         parseFloat(settings.min_ev         || 0.05),
@@ -153,7 +135,6 @@ async function refreshMatches() {
 
     const predictions = predictAll(matchList, options);
 
-    // Guardar en DB
     for (const p of predictions) {
       if (!p || !p.matchId) continue;
       savePrediction({
@@ -186,7 +167,6 @@ async function refreshMatches() {
     cache.ts = Date.now();
     console.log(`[${new Date().toISOString()}] Partidos actualizados: ${predictions.length}`);
 
-    // Notificar por Telegram las bets nuevas que cumplan el filtro de confianza
     const dbModule = require('./db');
     telegram.notifyBets(predictions, dbModule).catch(e => console.error('telegram notify:', e.message));
   } catch (err) {
@@ -194,25 +174,19 @@ async function refreshMatches() {
   }
 }
 
-// ─── Verificar resultados cada hora ──────────────────────────────────────────
 async function checkResults() {
   try {
     const finished = await fetchFinishedMatches();
-    const dbModule = require('../db');
+    const dbModule = require('./db');
     const pending  = dbModule.all("SELECT match_id FROM predictions WHERE status='pending'");
     const pendingIds = new Set(pending.map(p => p.match_id));
 
     for (const m of finished) {
       const matchId = `ps_${m.id}`;
       if (!pendingIds.has(matchId)) continue;
-
       const winner = m.winner?.name || m.results?.[0]?.team?.name;
       if (!winner) continue;
-
-      const t1 = m.opponents?.[0]?.opponent;
-      const t2 = m.opponents?.[1]?.opponent;
       const winnerKey = findTeamKey(winner) || `dyn_${winner}`;
-
       const result = resolveMatch(matchId, winnerKey);
       if (result) {
         console.log(`[Resultado] ${matchId}: ganó ${winner} | P&L: ${result.profit >= 0 ? '+' : ''}${result.profit?.toFixed(2)}`);
@@ -225,18 +199,10 @@ async function checkResults() {
 }
 
 function start() {
-  // Al arrancar: scrapear HLTV primero, luego cargar partidos
   refreshHltvOdds().then(() => refreshMatches());
-
-  // Cada 5 minutos: actualizar partidos de PandaScore
   cron.schedule('*/5 * * * *', refreshMatches);
-
-  // Cada 30 minutos: scrapear cuotas de HLTV (1 request, sin límite)
   cron.schedule('*/30 * * * *', refreshHltvOdds);
-
-  // Cada hora: verificar resultados y actualizar bankroll
   cron.schedule('0 * * * *', checkResults);
-
   console.log('Scheduler iniciado: partidos 5min | cuotas HLTV 30min | resultados 1h');
 }
 
