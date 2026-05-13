@@ -151,6 +151,41 @@ router.get('/odds/:matchId', (req, res) => {
   });
 });
 
+// ── Debug: ver qué devuelven las APIs de cuotas ───────────────────────────────
+router.get('/debug/odds', async (req, res) => {
+  const axios = require('axios');
+  const ODDS_KEY = process.env.ODDS_API_KEY;
+  const result = { key: ODDS_KEY ? ODDS_KEY.slice(0, 8) + '...' : 'NO KEY', theoddsapi: null, oddspapi: null };
+
+  // Probar TheOddsAPI
+  try {
+    const r = await axios.get('https://api.the-odds-api.com/v4/sports/esports_cs2/odds', {
+      params: { apiKey: ODDS_KEY, regions: 'eu,us', markets: 'h2h', oddsFormat: 'decimal' },
+      timeout: 10000,
+    });
+    result.theoddsapi = { status: 'ok', count: r.data?.length, sample: r.data?.[0] || null, remaining: r.headers['x-requests-remaining'] };
+  } catch (e) {
+    result.theoddsapi = { status: 'error', code: e.response?.status, message: e.response?.data?.message || e.message };
+  }
+
+  // Probar OddsPapi
+  try {
+    const now = new Date();
+    const from = now.toISOString().slice(0, 10);
+    const to = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const r = await axios.get('https://api.oddspapi.io/v4/fixtures', {
+      params: { apiKey: ODDS_KEY, sportId: 17, hasOdds: true, from, to },
+      timeout: 10000,
+    });
+    const data = r.data?.data || r.data || [];
+    result.oddspapi = { status: 'ok', count: Array.isArray(data) ? data.length : typeof data, sample: Array.isArray(data) ? data[0] : data };
+  } catch (e) {
+    result.oddspapi = { status: 'error', code: e.response?.status, message: e.response?.data?.message || e.message };
+  }
+
+  res.json(result);
+});
+
 // ── Status ────────────────────────────────────────────────────────────────────
 router.get('/status', (req, res) => {
   const PANDA_KEY = process.env.PANDASCORE_API_KEY;
