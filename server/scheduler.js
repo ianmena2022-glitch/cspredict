@@ -6,8 +6,8 @@ const { getTeamStats } = require('./teamStats');
 const { db, savePrediction, resolveMatch, resolveUserBetsByMatch, getBankroll, getSettings } = require('./db');
 const telegram = require('./telegram');
 
-const PANDA_KEY = process.env.PANDASCORE_API_KEY;
-const ODDS_KEY  = process.env.ODDS_API_KEY;
+const PANDA_KEY  = process.env.PANDASCORE_API_KEY;
+const ODDS_KEY   = process.env.ODDS_API_KEY;       // OddsPapi key (ODDS_API_KEY en Railway)
 
 const pandaApi = axios.create({
   baseURL: 'https://api.pandascore.co',
@@ -19,22 +19,56 @@ const pandaApi = axios.create({
 const cache = { matches: null, ts: 0, pinnacle: null };
 const CACHE_TTL = 5 * 60 * 1000;
 
-// Cache de cuotas separado — se actualiza cada 30 min para ahorrar calls
-const oddsCache = { bookmaker: [], pinnacle: [], ts: 0 };
+// Cache de cuotas separado — se actualiza cada 30 min para ahorrar calls a OddsPapi
+const oddsCache = { fixtures: [], ts: 0 };
 const ODDS_TTL  = 30 * 60 * 1000;
 
 module.exports.cache = cache;
 
+// Normaliza el array de fixtures de OddsPapi a un formato interno simple:
+// [ { team1Name, team2Name, odds1xbet: {team1, team2}, oddsPinnacle: {team1, team2} } ]
+function normalizeOddsPapi(fixtures) {
+  const result = [];
+  for (const f of fixtures) {
+    const p1 = f.participants?.[0];
+    const p2 = f.participants?.[1];
+    if (!p1 || !p2) continue;
+
+    const getPrice = (bookSlug) => {
+      const bk = f.bookmakers?.[bookSlug];
+      if (!bk) return null;
+      // Market 171 = match winner; outcomes 171=team1, 172=team2
+      const m = bk.markets?.['171'];
+      if (!m) return null;
+      const o1 = m.outcomes?.['171']?.players?.['0']?.price;
+      const o2 = m.outcomes?.['172']?.players?.['0']?.price;
+      if (!o1 || !o2) return null;
+      return { team1: +parseFloat(o1).toFixed(2), team2: +parseFloat(o2).toFixed(2) };
+    };
+
+    result.push({
+      team1Name:     p1.name,
+      team2Name:     p2.name,
+      fixtureId:     f.fixtureId,
+      odds1xbet:     getPrice('1xbet'),
+      oddsPinnacle:  getPrice('pinnacle'),
+      oddsGgbet:     getPrice('ggbet'),
+    });
+  }
+  return result;
+}
+
 async function fetchOdds() {
-  if (!ODDS_KEY || ODDS_KEY === 'your_key_here') return { bookmaker: [], pinnacle: [] };
-  const res = await axios.get('https://api.the-odds-api.com/v4/sports/esports_cs2/odds', {
-    params: { apiKey: ODDS_KEY, regions: 'eu,us', markets: 'h2h', oddsFormat: 'decimal' },
-    timeout: 10000,
+  if (!ODDS_KEY || ODDS_KEY === 'your_key_here') return [];
+  const now  = new Date();
+  const from = now.toISOString().slice(0, 10);
+  const to   = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const res  = await axios.get('https://api.oddspapi.io/v4/fixtures', {
+    params: { apiKey: ODDS_KEY, sportId: 17, hasOdds: true, from, to },
+    timeout: 15000,
   });
-  const all = res.data || [];
-  const pinnacle  = all.filter(o => o.bookmakers?.some(b => b.key === 'pinnacle'));
-  const bookmaker = all;
-  return { bookmaker, pinnacle };
+  const fixtures = res.data?.data || res.data || [];
+  return normalizeOddsPapi(fixtures);
 }
 
 async function fetchLiveMatches() {
@@ -87,23 +121,19 @@ function findTeamKey(name) {
   }) || null;
 }
 
-function extractOdds(oddsData, t1Name, t2Name, bookmakerKey) {
-  const entry = oddsData.find(o =>
-    (o.home_team?.toLowerCase().includes(t1Name.toLowerCase()) ||
-     o.away_team?.toLowerCase().includes(t1Name.toLowerCase()))
-  );
-  if (!entry) return null;
-  const bk = entry.bookmakers?.find(b => b.key === bookmakerKey) || entry.bookmakers?.[0];
-  if (!bk) return null;
-  const market = bk.markets?.[0];
-  if (!market) return null;
-  const o1 = market.outcomes?.find(o => o.name?.toLowerCase().includes(t1Name.toLowerCase()))?.price;
-  const o2 = market.outcomes?.find(o => o.name?.toLowerCase().includes(t2Name.toLowerCase()))?.price;
-  if (!o1 || !o2) return null;
-  return { team1: +o1.toFixed(2), team2: +o2.toFixed(2) };
+// Busca en el array normalizado de OddsPapi el partido que coincide con t1Name/t2Name
+function findOddsEntry(oddsNorm, t1Name, t2Name) {
+  const n1 = t1Name.toLowerCase();
+  const n2 = t2Name.toLowerCase();
+  return oddsNorm.find(e => {
+    const e1 = e.team1Name?.toLowerCase() || '';
+    const e2 = e.team2Name?.toLowerCase() || '';
+    return (e1.includes(n1) || n1.includes(e1)) && (e2.includes(n2) || n2.includes(e2)) ||
+           (e1.includes(n2) || n2.includes(e1)) && (e2.includes(n1) || n1.includes(e2));
+  });
 }
 
-function mapMatch(m, oddsData, pinnacleData) {
+function mapMatch(m, oddsNorm) {
   const t1 = m.opponents?.[0]?.opponent;
   const t2 = m.opponents?.[1]?.opponent;
   if (!t1 || !t2) return null;
@@ -111,11 +141,24 @@ function mapMatch(m, oddsData, pinnacleData) {
   const t1Key = findTeamKey(t1.name) || `dyn_${t1.name}`;
   const t2Key = findTeamKey(t2.name) || `dyn_${t2.name}`;
 
-  // Cuotas: primero 1xbet, luego cualquiera disponible
-  const odds1xbet   = extractOdds(oddsData,    t1.name, t2.name, 'onexbet');
-  const oddsPinnacle = extractOdds(pinnacleData, t1.name, t2.name, 'pinnacle');
-  const oddsAny     = extractOdds(oddsData,    t1.name, t2.name, '');
-  const finalOdds   = odds1xbet || oddsAny || null;
+  const entry = findOddsEntry(oddsNorm, t1.name, t2.name);
+
+  // ¿Los equipos en OddsPapi están en orden inverso al de PandaScore?
+  const flipped = entry &&
+    (entry.team1Name?.toLowerCase().includes(t2.name.toLowerCase()) ||
+     t2.name.toLowerCase().includes(entry.team1Name?.toLowerCase() || ''));
+
+  const raw1xbet    = entry?.odds1xbet;
+  const rawPinnacle = entry?.oddsPinnacle;
+  const rawGgbet    = entry?.oddsGgbet;
+
+  // Si están invertidos, dar vuelta las cuotas
+  const flip = (o) => o ? { team1: o.team2, team2: o.team1 } : null;
+  const odds1xbet    = flipped ? flip(raw1xbet)    : raw1xbet;
+  const oddsPinnacle = flipped ? flip(rawPinnacle) : rawPinnacle;
+  const oddsGgbet    = flipped ? flip(rawGgbet)    : rawGgbet;
+
+  const finalOdds   = odds1xbet || oddsPinnacle || oddsGgbet || null;
   const oddsFallback = !finalOdds;
 
   // Detectar LAN: si hay location en el torneo y no dice "online"
@@ -136,6 +179,7 @@ function mapMatch(m, oddsData, pinnacleData) {
     odds: finalOdds || { team1: 1.90, team2: 1.90 },
     oddsFallback,
     pinnacleOdds: oddsPinnacle,
+    oddsSource: odds1xbet ? '1xbet' : oddsPinnacle ? 'pinnacle' : oddsGgbet ? 'ggbet' : null,
     stream: m.streams_list?.[0]?.raw_url || '#',
     live: m.status === 'running',
     pandaId: m.id,
@@ -143,14 +187,13 @@ function mapMatch(m, oddsData, pinnacleData) {
   };
 }
 
-// ─── Actualizar cuotas cada 30 min (ahorra calls a TheOddsAPI) ───────────────
+// ─── Actualizar cuotas cada 30 min (OddsPapi) ────────────────────────────────
 async function refreshOdds() {
   try {
-    const result = await fetchOdds();
-    oddsCache.bookmaker = result.bookmaker || [];
-    oddsCache.pinnacle  = result.pinnacle  || [];
+    const fixtures = await fetchOdds();
+    oddsCache.fixtures = fixtures;
     oddsCache.ts = Date.now();
-    console.log(`[${new Date().toISOString()}] Cuotas actualizadas`);
+    console.log(`[${new Date().toISOString()}] Cuotas actualizadas: ${fixtures.length} partidos con odds`);
   } catch (err) {
     console.error('refreshOdds error:', err.message);
   }
@@ -166,7 +209,7 @@ async function refreshMatches() {
 
     const pandaData = await fetchLiveMatches().catch(() => null);
     const rawMatches = pandaData || null;
-    const { bookmaker = [], pinnacle = [] } = oddsCache;
+    const oddsNorm = oddsCache.fixtures || [];
 
     // Sin fallback a mock — si no hay partidos reales, mostramos nada
     if (!rawMatches || rawMatches.length === 0) {
@@ -176,7 +219,7 @@ async function refreshMatches() {
       return;
     }
 
-    const rawList = rawMatches.map(m => mapMatch(m, bookmaker, pinnacle)).filter(Boolean);
+    const rawList = rawMatches.map(m => mapMatch(m, oddsNorm)).filter(Boolean);
 
     // Enriquecer con stats dinámicos de PandaScore (winRate real, forma, descanso, LAN)
     const matchList = await Promise.all(rawList.map(async (m) => {

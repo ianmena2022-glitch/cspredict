@@ -42,6 +42,7 @@ function ProbBar({ p1, p2 }) {
 
 export default function MatchCard({ prediction, settings }) {
   const { match, team1, team2, recommendation, confidence, kellyAmount, kellyPct, pinnacleUsed, insufficientData, usingDynamic, isLan, noOdds } = prediction;
+  const oddsSource = match?.oddsSource;
   const [accepted, setAccepted]       = useState(false);
   const [oddsVisible, setOddsVisible] = useState(false);
   const [liveOdds, setLiveOdds]       = useState(null);
@@ -196,7 +197,7 @@ export default function MatchCard({ prediction, settings }) {
       {noOdds ? (
         <div className="w-full mb-3 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs
           text-slate-600 border border-dashed border-slate-800 cursor-default">
-          Sin cuotas disponibles en TheOddsAPI
+          Sin cuotas disponibles (OddsPapi)
         </div>
       ) : !oddsVisible ? (
         <button
@@ -208,7 +209,9 @@ export default function MatchCard({ prediction, settings }) {
       ) : (
         <div className="bg-[#111827] rounded-lg px-3 py-2 mb-3">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs text-slate-500 font-medium">Cuotas — verificar en 1xbet</span>
+            <span className="text-xs text-slate-500 font-medium">
+              Cuotas {oddsSource ? <span className="text-slate-400 uppercase">{oddsSource}</span> : '— verificar en 1xbet'}
+            </span>
             <div className="flex items-center gap-2">
               {oddsUpdatedAt && (
                 <span className="text-xs text-slate-600">
