@@ -157,8 +157,8 @@ export default function MatchCard({ prediction, settings }) {
           <span className="font-bold text-sm">{team1.tag}</span>
           <span className="text-xs text-slate-400 mb-2 text-center">{team1.name}</span>
           <div className="text-xl font-bold text-blue-400">{team1.probability}%</div>
-          <div className="text-lg font-bold text-white mt-1">{match.odds.team1}x</div>
-          <EVBadge ev={team1.ev} />
+          {!noOdds && <div className="text-lg font-bold text-white mt-1">{match.odds.team1}x</div>}
+          {!noOdds && <EVBadge ev={team1.ev} />}
           {isRec1 && (
             <div className="mt-2 flex items-center gap-1 text-green-400 text-xs font-bold">
               <CheckCircle size={12} /> APOSTAR
@@ -177,8 +177,8 @@ export default function MatchCard({ prediction, settings }) {
           <span className="font-bold text-sm">{team2.tag}</span>
           <span className="text-xs text-slate-400 mb-2 text-center">{team2.name}</span>
           <div className="text-xl font-bold text-orange-400">{team2.probability}%</div>
-          <div className="text-lg font-bold text-white mt-1">{match.odds.team2}x</div>
-          <EVBadge ev={team2.ev} />
+          {!noOdds && <div className="text-lg font-bold text-white mt-1">{match.odds.team2}x</div>}
+          {!noOdds && <EVBadge ev={team2.ev} />}
           {isRec2 && (
             <div className="mt-2 flex items-center gap-1 text-green-400 text-xs font-bold">
               <CheckCircle size={12} /> APOSTAR
