@@ -177,10 +177,11 @@ function predict(matchId, match, options = {}) {
   let kellyPct = 0;
   let kellyAmount = 0;
 
-  const bestEv   = Math.max(ev1, ev2);
+  const bestEv   = match.oddsFallback ? 0 : Math.max(ev1, ev2);
   const bestEdge = ev1 > ev2 ? edge1 : edge2;
 
-  if (bestEv >= minEv && bestEdge >= minEdge) {
+  // Sin cuotas reales: no recomendar ni calcular Kelly (serían valores ficticios)
+  if (!match.oddsFallback && bestEv >= minEv && bestEdge >= minEdge) {
     const side  = ev1 > ev2 ? 1 : 2;
     recommendation = side === 1 ? match.team1 : match.team2;
     kellyPct    = side === 1 ? k1 : k2;
