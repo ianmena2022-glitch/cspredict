@@ -216,15 +216,54 @@ router.get('/debug/odds', async (req, res) => {
 // ── Status ────────────────────────────────────────────────────────────────────
 router.get('/status', (req, res) => {
   const PANDA_KEY = process.env.PANDASCORE_API_KEY;
-  const ODDS_KEY  = process.env.ODDS_API_KEY;
-  const { cache }  = scheduler;
+  const { cache } = scheduler;
+  const hltvModule = require('../hltvScraper');
+  const hltvCache = hltvModule.hltvCache || { fixtures: [], ts: 0 };
   res.json({
-    pandascore:   PANDA_KEY && PANDA_KEY !== 'your_key_here' ? 'connected' : 'mock',
-    oddsApi:      ODDS_KEY  && ODDS_KEY  !== 'your_key_here' ? 'connected' : 'mock',
-    mode:         PANDA_KEY && PANDA_KEY !== 'your_key_here' ? 'live' : 'mock_data',
-    cacheAge:     cache.ts ? Math.round((Date.now() - cache.ts) / 1000) + 's' : 'empty',
-    bankroll:     getBankroll(),
+    pandascore:    PANDA_KEY && PANDA_KEY !== 'your_key_here' ? 'connected' : 'no_key',
+    matchCount:    cache.matches?.length ?? 0,
+    cacheAge:      cache.ts ? Math.round((Date.now() - cache.ts) / 1000) + 's' : 'empty',
+    hltvFixtures:  hltvCache?.fixtures?.length ?? 0,
+    hltvAge:       hltvCache?.ts ? Math.round((Date.now() - hltvCache.ts) / 1000) + 's' : 'empty',
+    bankroll:      getBankroll(),
   });
+});
+
+router.get('/debug/status', async (req, res) => {
+  const axios = require('axios');
+  const PANDA_KEY = process.env.PANDASCORE_API_KEY;
+  const result = { pandascore: null, hltv: null };
+
+  // Test PandaScore
+  try {
+    const r = await axios.get('https://api.pandascore.co/csgo/matches/upcoming', {
+      headers: { Authorization: `Bearer ${PANDA_KEY}` },
+      params: { per_page: 3, sort: 'begin_at' },
+      timeout: 10000,
+    });
+    result.pandascore = { status: 'ok', count: r.data?.length, sample: r.data?.[0]?.name };
+  } catch (e) {
+    result.pandascore = { status: 'error', code: e.response?.status, message: e.message };
+  }
+
+  // Test HLTV
+  try {
+    const r = await axios.get('https://www.hltv.org/matches', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      timeout: 10000,
+    });
+    const len = r.data?.length || 0;
+    const hasMatches = r.data?.includes('upcomingMatch') || r.data?.includes('matchTeamName');
+    result.hltv = { status: 'ok', httpCode: r.status, bodySize: len, hasMatchData: hasMatches, cloudflare: r.data?.includes('cf-browser-verification') || r.data?.includes('Just a moment') };
+  } catch (e) {
+    result.hltv = { status: 'error', code: e.response?.status, message: e.message };
+  }
+
+  res.json(result);
 });
 
 module.exports = router;
