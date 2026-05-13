@@ -119,9 +119,10 @@ async function refreshTheOddsApi() {
   }
 }
 
-// Refresca ambas fuentes en paralelo
+// Refresca OddsPapi (pre-match, cada 30min)
+// TheOddsAPI NO se refresca automáticamente — solo on-demand para ahorrar los 500 req/mes del free tier
 async function refreshHltvOdds() {
-  await Promise.allSettled([refreshOddsPapi(), refreshTheOddsApi()]);
+  await refreshOddsPapi();
 }
 
 // ── Lookup ────────────────────────────────────────────────────────────────────
@@ -143,8 +144,12 @@ function findHltvEntry(t1Name, t2Name) {
 // ── On-demand odds fetch ──────────────────────────────────────────────────────
 
 async function fetchHltvMatchOdds(t1Name, t2Name) {
-  // 1. Intentar TheOddsAPI (incluye live + pre-match, ya cacheado)
-  if (theoddsCache.matches.length) {
+  // 1. TheOddsAPI — fetch on-demand si hay key (cubre live + pre-match)
+  if (THE_ODDS_KEY) {
+    // Si el cache está vacío o tiene más de 5min, refrescar ahora
+    if (!theoddsCache.ts || Date.now() - theoddsCache.ts > 5 * 60 * 1000) {
+      await refreshTheOddsApi();
+    }
     const entry = findTheOddsEntry(t1Name, t2Name);
     if (entry) {
       const odds = extractTheOddsOdds(entry, t1Name, t2Name);
@@ -152,7 +157,7 @@ async function fetchHltvMatchOdds(t1Name, t2Name) {
     }
   }
 
-  // 2. Intentar OddsPapi (solo pre-match)
+  // 2. OddsPapi — solo pre-match
   if (ODDS_KEY) {
     const entry = findHltvEntry(t1Name, t2Name);
     if (entry?.fixtureId) {
